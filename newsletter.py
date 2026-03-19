@@ -82,15 +82,16 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
 섹션은 최소 5개, 최대 7개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
 오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향"""
 
-    # Gemini REST API + Google 검색 그라운딩
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # Gemini REST API + Google 검색 그라운딩 (gemini-2.0-flash)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "tools": [{"google_search_retrieval": {}}],
+        "tools": [{"google_search": {}}],
     }
     resp = requests.post(url, json=payload, timeout=120)
     resp.raise_for_status()
-    full_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    parts = resp.json()["candidates"][0]["content"]["parts"]
+    full_text = "".join(p["text"] for p in parts if "text" in p)
 
     # JSON 파싱
     try:

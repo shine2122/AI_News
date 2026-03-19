@@ -5,6 +5,9 @@ on:
     - cron: '50 20 * * 4'  # 매주 금요일 05:50 KST (목요일 20:50 UTC)
   workflow_dispatch:        # 수동 실행 (테스트용)
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   send-newsletter:
     runs-on: ubuntu-latest
