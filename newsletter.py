@@ -171,7 +171,7 @@ def build_html_email(data: dict) -> str:
 
     highlights_html = ""
     for h in highlights:
-        highlights_html += f'<li style="margin-bottom:8px; color:#444; font-size:15px;">{h}</li>'
+        highlights_html += f'<li style="margin-bottom:8px; color:#e8e8e8; font-size:15px;">{h}</li>'
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
