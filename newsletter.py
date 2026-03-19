@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import google.generativeai as genai
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -49,8 +49,6 @@ def get_korean_date(dt: datetime) -> str:
 
 def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
     """Gemini API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
-    genai.configure(api_key=GEMINI_API_KEY)
-
     today = datetime.now(KST).strftime("%Y-%m-%d")
 
     prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터입니다. 한국어로 작성하며,
@@ -84,13 +82,15 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
 섹션은 최소 5개, 최대 7개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
 오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향"""
 
-    # Google 검색 그라운딩 사용
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        tools="google_search_retrieval",
-    )
-    response = model.generate_content(prompt)
-    full_text = response.text
+    # Gemini REST API + Google 검색 그라운딩
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "tools": [{"google_search_retrieval": {}}],
+    }
+    resp = requests.post(url, json=payload, timeout=120)
+    resp.raise_for_status()
+    full_text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
     # JSON 파싱
     try:
