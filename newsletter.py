@@ -55,9 +55,11 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
 독자가 AI 트렌드를 빠르게 파악할 수 있도록 명확하고 통찰력 있는 분석을 제공합니다.
 
 오늘({today}) 기준 최신 AI 뉴스를 Google 검색으로 수집하고 분석해주세요.
-검색 키워드: "AI news {today}", "generative AI 2026", "LLM release 2026", "AI model update"
+검색 키워드: "AI news {today}", "generative AI 2026", "LLM release 2026", "AI model update",
+"ComfyUI update 2026", "ComfyUI workflow", "vibe coding AI", "AI coding tools 2026",
+"AI interior design 2026", "AI architecture design"
 
-검색 결과를 바탕으로 오늘의 가장 중요한 AI 뉴스 5-7개를 선정하고,
+검색 결과를 바탕으로 오늘의 가장 중요한 AI 뉴스 5-8개를 선정하고,
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
 
 {{
@@ -79,8 +81,11 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
   ]
 }}
 
-섹션은 최소 5개, 최대 7개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
-오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향"""
+섹션은 최소 5개, 최대 8개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
+오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향,
+ComfyUI·워크플로우, 바이브코딩·AI 개발도구, 인테리어·건축 AI.
+매주 뉴스가 있는 카테고리 위주로 선정하되, ComfyUI·워크플로우 / 바이브코딩·AI 개발도구 / 인테리어·건축 AI 섹션은
+관련 뉴스가 있을 경우 반드시 포함하세요."""
 
     # Gemini REST API + Google 검색 그라운딩 (gemini-2.0-flash)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GEMINI_API_KEY}"
