@@ -11,13 +11,13 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import anthropic
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # 환경 변수
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
@@ -48,14 +48,18 @@ def get_korean_date(dt: datetime) -> str:
 
 
 def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
-    """Claude API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    """Gemini API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
+    genai.configure(api_key=GEMINI_API_KEY)
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
 
-    system_prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터입니다. 한국어로 작성하며,
+    prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터입니다. 한국어로 작성하며,
 독자가 AI 트렌드를 빠르게 파악할 수 있도록 명확하고 통찰력 있는 분석을 제공합니다.
 
+오늘({today}) 기준 최신 AI 뉴스를 Google 검색으로 수집하고 분석해주세요.
+검색 키워드: "AI news {today}", "generative AI 2026", "LLM release 2026", "AI model update"
+
+검색 결과를 바탕으로 오늘의 가장 중요한 AI 뉴스 5-7개를 선정하고,
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
 
 {{
@@ -77,49 +81,16 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
   ]
 }}
 
-섹션은 최소 5개, 최대 7개로 구성하세요. 카테고리는 다음 중 선택하세요:
-영상 생성 AI, 이미지 생성 AI, 언어 모델, 오픈소스·커뮤니티, 음성·음악 AI,
-크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향, 영상 편집·워크플로우"""
+섹션은 최소 5개, 최대 7개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
+오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향"""
 
-    user_prompt = f"""오늘({today}) 기준 최신 AI 뉴스를 검색하고 분석해주세요.
-
-다음 키워드로 검색하세요:
-1. "AI news today {today}"
-2. "artificial intelligence latest 2026"
-3. "AI model release 2026"
-4. "generative AI news"
-5. "LLM update {today}"
-
-검색 결과를 바탕으로 오늘의 가장 중요한 AI 뉴스 5-7개를 선정하고,
-지정된 JSON 형식으로 한국어 뉴스레터를 작성하세요.
-
-각 섹션에서:
-- 구체적인 회사명, 제품명, 수치를 포함하세요
-- 독자에게 실질적으로 중요한 의미를 설명하세요
-- {AUTHOR_NAME}의 한마디는 날카롭고 재치 있게 작성하세요"""
-
-    # 웹 검색 도구 사용
-    tools = [
-        {
-            "type": "web_search_20260209",
-            "name": "web_search",
-            "max_uses": 5,
-        }
-    ]
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-        tools=tools,
+    # Google 검색 그라운딩 사용
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        tools="google_search_retrieval",
     )
-
-    # 응답에서 텍스트 추출
-    full_text = ""
-    for block in response.content:
-        if block.type == "text":
-            full_text += block.text
+    response = model.generate_content(prompt)
+    full_text = response.text
 
     # JSON 파싱
     try:
@@ -349,7 +320,7 @@ def send_email(data: dict) -> bool:
 
 def main():
     # 환경 변수 확인
-    required_vars = ["ANTHROPIC_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "RECIPIENT_EMAIL"]
+    required_vars = ["GEMINI_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "RECIPIENT_EMAIL"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
         print(f"❌ 필수 환경 변수가 없습니다: {', '.join(missing)}")
