@@ -327,6 +327,26 @@ def send_email(data: dict) -> bool:
         return False
 
 
+def save_html_files(data: dict, html: str) -> None:
+    """뉴스레터 HTML을 public/ 폴더에 저장합니다."""
+    base_dir = os.path.dirname(__file__)
+    public_dir = os.path.join(base_dir, "public")
+    issues_dir = os.path.join(public_dir, "issues")
+    os.makedirs(issues_dir, exist_ok=True)
+
+    issue_number = data["issue_number"]
+
+    # 최신호: public/index.html
+    with open(os.path.join(public_dir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+
+    # 아카이브: public/issues/001.html
+    with open(os.path.join(issues_dir, f"{issue_number:03d}.html"), "w", encoding="utf-8") as f:
+        f.write(html)
+
+    print(f"💾 HTML 저장 완료: public/index.html, public/issues/{issue_number:03d}.html")
+
+
 def main():
     # 환경 변수 확인
     required_vars = ["GEMINI_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "RECIPIENT_EMAIL"]
@@ -347,6 +367,10 @@ def main():
     data = collect_and_generate_newsletter(issue_number, date_str)
 
     print(f"✍️  뉴스레터 작성 완료: \"{data.get('tagline')}\"")
+
+    # HTML 파일 저장 (Netlify 배포용)
+    html = build_html_email(data)
+    save_html_files(data, html)
 
     # 이메일 발송
     print("📧 이메일 발송 중...")
