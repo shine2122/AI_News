@@ -25,6 +25,7 @@ RECIPIENT_EMAIL = (os.getenv("RECIPIENT_EMAIL") or "").strip()
 NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "Design Letter").strip()
 AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
 SITE_URL = (os.getenv("SITE_URL") or "https://aiinfor.netlify.app").strip()
+KAKAO_ACCESS_TOKEN = (os.getenv("KAKAO_ACCESS_TOKEN") or "").strip()
 
 KST = timezone(timedelta(hours=9))
 
@@ -343,6 +344,59 @@ def send_email(data: dict) -> bool:
         return False
 
 
+def send_kakao_me(data: dict) -> bool:
+    """카카오 나에게 보내기 API로 뉴스레터 링크를 전송합니다."""
+    if not KAKAO_ACCESS_TOKEN:
+        print("⚠️  KAKAO_ACCESS_TOKEN 없음 — 카카오 전송 건너뜀")
+        return False
+
+    issue_number = data["issue_number"]
+    tagline = data.get("tagline", "오늘의 AI 뉴스")
+
+    payload = {
+        "template_object": json.dumps({
+            "object_type": "feed",
+            "content": {
+                "title": f"{NEWSLETTER_NAME} #{issue_number:03d}",
+                "description": tagline,
+                "image_url": f"{SITE_URL}/og-image.png",
+                "image_width": 1200,
+                "image_height": 630,
+                "link": {
+                    "web_url": SITE_URL,
+                    "mobile_web_url": SITE_URL,
+                },
+            },
+            "buttons": [
+                {
+                    "title": "뉴스레터 읽기",
+                    "link": {
+                        "web_url": SITE_URL,
+                        "mobile_web_url": SITE_URL,
+                    },
+                }
+            ],
+        })
+    }
+
+    try:
+        resp = requests.post(
+            "https://kapi.kakao.com/v2/api/talk/memo/default/send",
+            headers={"Authorization": f"Bearer {KAKAO_ACCESS_TOKEN}"},
+            data=payload,
+            timeout=10,
+        )
+        if resp.status_code == 200 and resp.json().get("result_code") == 0:
+            print("✅ 카카오 나에게 보내기 완료")
+            return True
+        else:
+            print(f"❌ 카카오 전송 실패: {resp.status_code} {resp.text}")
+            return False
+    except Exception as e:
+        print(f"❌ 카카오 전송 오류: {e}")
+        return False
+
+
 def generate_og_image(data: dict, public_dir: str) -> None:
     """OG 썸네일 이미지를 생성합니다."""
     tagline = data.get("tagline", NEWSLETTER_NAME)
@@ -437,6 +491,10 @@ def main():
     # 이메일 발송
     print("📧 이메일 발송 중...")
     send_email(data)
+
+    # 카카오 나에게 보내기
+    print("💬 카카오 나에게 보내기 중...")
+    send_kakao_me(data)
 
 
 if __name__ == "__main__":
