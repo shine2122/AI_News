@@ -1,2 +1,3 @@
 .issue_counter
 .env
+__pycache__/
