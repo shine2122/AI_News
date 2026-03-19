@@ -83,7 +83,7 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
 오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향"""
 
     # Gemini REST API + Google 검색 그라운딩 (gemini-2.0-flash)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "tools": [{"google_search": {}}],
