@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 
 import requests
 from dotenv import load_dotenv
+from PIL import Image, ImageDraw
 
 load_dotenv()
 
@@ -23,6 +24,7 @@ GMAIL_APP_PASSWORD = (os.getenv("GMAIL_APP_PASSWORD") or "").strip()
 RECIPIENT_EMAIL = (os.getenv("RECIPIENT_EMAIL") or "").strip()
 NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "Design Letter").strip()
 AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
+SITE_URL = (os.getenv("SITE_URL") or "https://aiinfor.netlify.app").strip()
 
 KST = timezone(timedelta(hours=9))
 
@@ -173,12 +175,26 @@ def build_html_email(data: dict) -> str:
     for h in highlights:
         highlights_html += f'<li style="margin-bottom:8px; color:#e8e8e8; font-size:15px;">{h}</li>'
 
+    og_title = f"{NEWSLETTER_NAME} #{issue_number:03d} — {tagline}"
+    og_description = summary.replace("\"", "&quot;")
+    og_image = f"{SITE_URL}/og-image.png"
+
     html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{NEWSLETTER_NAME} #{issue_number:03d}</title>
+<title>{og_title}</title>
+<meta name="description" content="{og_description}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{og_title}">
+<meta property="og:description" content="{og_description}">
+<meta property="og:image" content="{og_image}">
+<meta property="og:url" content="{SITE_URL}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{og_title}">
+<meta name="twitter:description" content="{og_description}">
+<meta name="twitter:image" content="{og_image}">
 </head>
 <body style="margin:0; padding:0; background:#f5f5f7; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;">
@@ -327,6 +343,49 @@ def send_email(data: dict) -> bool:
         return False
 
 
+def generate_og_image(data: dict, public_dir: str) -> None:
+    """OG 썸네일 이미지를 생성합니다."""
+    tagline = data.get("tagline", NEWSLETTER_NAME)
+    issue_number = data["issue_number"]
+
+    img = Image.new("RGB", (1200, 630), color="#1a1a2e")
+    draw = ImageDraw.Draw(img)
+
+    # 왼쪽 보라색 강조선
+    draw.rectangle([0, 0, 8, 630], fill="#6366f1")
+
+    # 상단 배지
+    draw.rounded_rectangle([60, 55, 60 + len(NEWSLETTER_NAME) * 13 + 40, 105], radius=20, fill="#6366f1")
+    draw.text((80, 68), NEWSLETTER_NAME, fill="white")
+
+    # 이슈 번호
+    draw.text((60, 130), f"#{issue_number:03d}", fill="#a78bfa")
+
+    # 태그라인 (긴 텍스트 줄바꿈)
+    words = tagline
+    draw.text((60, 200), words[:28], fill="#ffffff")
+    if len(words) > 28:
+        draw.text((60, 255), words[28:56], fill="#ffffff")
+
+    # 구분선
+    draw.rectangle([60, 360, 1140, 362], fill="#2d2d4e")
+
+    # 하단 카테고리 태그
+    tags = ["언어모델", "ComfyUI", "바이브코딩", "인테리어AI", "영상AI"]
+    x = 60
+    for tag in tags:
+        w = len(tag) * 14 + 30
+        draw.rounded_rectangle([x, 400, x + w, 440], radius=12, fill="#2d2d4e")
+        draw.text((x + 15, 410), tag, fill="#a78bfa")
+        x += w + 15
+
+    # URL
+    draw.text((60, 560), SITE_URL.replace("https://", ""), fill="#6366f1")
+
+    img.save(os.path.join(public_dir, "og-image.png"))
+    print("🖼️  OG 이미지 생성 완료: public/og-image.png")
+
+
 def save_html_files(data: dict, html: str) -> None:
     """뉴스레터 HTML을 public/ 폴더에 저장합니다."""
     base_dir = os.path.dirname(__file__)
@@ -335,6 +394,9 @@ def save_html_files(data: dict, html: str) -> None:
     os.makedirs(issues_dir, exist_ok=True)
 
     issue_number = data["issue_number"]
+
+    # OG 썸네일 이미지 생성
+    generate_og_image(data, public_dir)
 
     # 최신호: public/index.html
     with open(os.path.join(public_dir, "index.html"), "w", encoding="utf-8") as f:
