@@ -16,13 +16,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 환경 변수
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
-NEWSLETTER_NAME = os.getenv("NEWSLETTER_NAME", "Design Letter")
-AUTHOR_NAME = os.getenv("AUTHOR_NAME", "제시카AI")
+# 환경 변수 (앞뒤 공백 자동 제거)
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
+GMAIL_USER = (os.getenv("GMAIL_USER") or "").strip()
+GMAIL_APP_PASSWORD = (os.getenv("GMAIL_APP_PASSWORD") or "").strip()
+RECIPIENT_EMAIL = (os.getenv("RECIPIENT_EMAIL") or "").strip()
+NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "Design Letter").strip()
+AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
 
 KST = timezone(timedelta(hours=9))
 
