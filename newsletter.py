@@ -89,6 +89,9 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
         "tools": [{"google_search": {}}],
     }
     resp = requests.post(url, json=payload, timeout=120)
+    print(f"[DEBUG] Gemini API 상태코드: {resp.status_code}")
+    if resp.status_code != 200:
+        print(f"[DEBUG] 오류 응답: {resp.text[:500]}")
     resp.raise_for_status()
     parts = resp.json()["candidates"][0]["content"]["parts"]
     full_text = "".join(p["text"] for p in parts if "text" in p)
