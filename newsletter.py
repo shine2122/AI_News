@@ -249,7 +249,7 @@ def build_html_email(data: dict) -> str:
   <!-- 푸터 -->
   <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:24px 40px; text-align:center;">
     <p style="margin:0; font-size:12px; color:#999;">
-      {NEWSLETTER_NAME} · 매일 아침 5시 발송<br>
+      {NEWSLETTER_NAME} · 매주 금요일 오전 5시 50분 발송<br>
       구독 취소를 원하시면 회신해주세요.
     </p>
   </td></tr>

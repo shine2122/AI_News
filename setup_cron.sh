@@ -1,6 +1,6 @@
 #!/bin/bash
 # ========================================
-# 매일 아침 5시 뉴스레터 자동 발송 설정
+# 매주 금요일 오전 5시 50분 뉴스레터 자동 발송 설정
 # 실행: bash setup_cron.sh
 # ========================================
 
@@ -22,7 +22,7 @@ echo "📦 패키지 설치 중..."
 pip3 install -r "$SCRIPT_DIR/requirements.txt" -q
 
 # 크론 작업 등록
-CRON_JOB="0 5 * * * $PYTHON_BIN $SCRIPT_DIR/newsletter.py >> $LOG_FILE 2>&1"
+CRON_JOB="50 5 * * 5 $PYTHON_BIN $SCRIPT_DIR/newsletter.py >> $LOG_FILE 2>&1"
 
 # 기존 등록된 크론 제거 후 새로 등록
 ( crontab -l 2>/dev/null | grep -v "newsletter.py" ; echo "$CRON_JOB" ) | crontab -
@@ -30,7 +30,7 @@ CRON_JOB="0 5 * * * $PYTHON_BIN $SCRIPT_DIR/newsletter.py >> $LOG_FILE 2>&1"
 echo ""
 echo "✅ 크론 설정 완료!"
 echo ""
-echo "   스케줄: 매일 오전 5시 (KST)"
+echo "   스케줄: 매주 금요일 오전 5시 50분 (KST)"
 echo "   스크립트: $SCRIPT_DIR/newsletter.py"
 echo "   로그: $LOG_FILE"
 echo ""
