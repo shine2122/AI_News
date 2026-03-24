@@ -97,8 +97,8 @@ ComfyUI·워크플로우, 바이브코딩·AI 개발도구, 인테리어·건축
 매주 뉴스가 있는 카테고리 위주로 선정하되, ComfyUI·워크플로우 / 바이브코딩·AI 개발도구 / 인테리어·건축 AI 섹션은
 관련 뉴스가 있을 경우 반드시 포함하세요."""
 
-    # Gemini REST API + Google 검색 그라운딩 (gemini-3-flash-preview)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
+    # Gemini REST API + Google 검색 그라운딩 (gemini-1.5-flash)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "tools": [{"google_search": {}}],
