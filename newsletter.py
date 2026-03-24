@@ -22,7 +22,7 @@ GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
 GMAIL_USER = (os.getenv("GMAIL_USER") or "").strip()
 GMAIL_APP_PASSWORD = (os.getenv("GMAIL_APP_PASSWORD") or "").strip()
 RECIPIENT_EMAIL = (os.getenv("RECIPIENT_EMAIL") or "").strip()
-NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "Design Letter").strip()
+NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "크리AI티브 AI Design Letter").strip()
 AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
 SITE_URL = (os.getenv("SITE_URL") or "https://aiinfor.netlify.app").strip()
 KAKAO_ACCESS_TOKEN = (os.getenv("KAKAO_ACCESS_TOKEN") or "").strip()
@@ -159,7 +159,7 @@ def build_html_email(data: dict) -> str:
                 {emoji} {category}
             </div>
             <h2 style="margin:0 0 12px; font-size:18px; color:#1a1a2e; line-height:1.4;">
-                ① {emoji} {title}
+                {emoji} {title}
             </h2>
             <p style="margin:0 0 16px; color:#444; line-height:1.8; font-size:15px;">
                 {body}
@@ -495,6 +495,13 @@ def main():
     # 카카오 나에게 보내기
     print("💬 카카오 나에게 보내기 중...")
     send_kakao_me(data)
+
+    # 공유 링크 출력
+    issue_url = f"{SITE_URL}/issues/{issue_number:03d}.html"
+    latest_url = SITE_URL
+    print(f"\n🔗 공유 링크:")
+    print(f"   최신호: {latest_url}")
+    print(f"   #{issue_number:03d}호 영구 링크: {issue_url}")
 
 
 if __name__ == "__main__":
