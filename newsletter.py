@@ -13,6 +13,7 @@ from email.mime.text import MIMEText
 
 import requests
 from dotenv import load_dotenv
+from google import genai
 from PIL import Image, ImageDraw
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -97,19 +98,13 @@ ComfyUI·워크플로우, 바이브코딩·AI 개발도구, 인테리어·건축
 매주 뉴스가 있는 카테고리 위주로 선정하되, ComfyUI·워크플로우 / 바이브코딩·AI 개발도구 / 인테리어·건축 AI 섹션은
 관련 뉴스가 있을 경우 반드시 포함하세요."""
 
-    # Gemini REST API + Google 검색 그라운딩 (gemini-1.5-flash)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "tools": [{"google_search": {}}],
-    }
-    resp = requests.post(url, json=payload, timeout=120)
-    print(f"[DEBUG] Gemini API 상태코드: {resp.status_code}")
-    if resp.status_code != 200:
-        print(f"[DEBUG] 오류 응답: {resp.text[:500]}")
-    resp.raise_for_status()
-    parts = resp.json()["candidates"][0]["content"]["parts"]
-    full_text = "".join(p["text"] for p in parts if "text" in p)
+    # Gemini SDK + Google 검색 그라운딩 (gemini-3-flash-preview)
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents=prompt,
+    )
+    full_text = response.text
 
     # JSON 파싱
     try:
