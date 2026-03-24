@@ -14,6 +14,9 @@ from email.mime.text import MIMEText
 import requests
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaInMemoryUpload
 
 load_dotenv()
 
@@ -26,6 +29,10 @@ NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "크리AI티브 AI Design Let
 AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
 SITE_URL = (os.getenv("SITE_URL") or "https://aiinfor.netlify.app").strip()
 KAKAO_ACCESS_TOKEN = (os.getenv("KAKAO_ACCESS_TOKEN") or "").strip()
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
+GOOGLE_REFRESH_TOKEN = (os.getenv("GOOGLE_REFRESH_TOKEN") or "").strip()
+GOOGLE_DRIVE_FOLDER_ID = (os.getenv("GOOGLE_DRIVE_FOLDER_ID") or "").strip()
 
 KST = timezone(timedelta(hours=9))
 
@@ -144,6 +151,12 @@ def build_html_email(data: dict) -> str:
     summary = data.get("summary", "")
     sections = data.get("sections", [])
     highlights = data.get("highlights", [])
+    drive_link = data.get("drive_link", "")
+    drive_link_html = (
+        f'<p style="margin:0 0 12px; font-size:13px;">'
+        f'<a href="{drive_link}" style="color:#6366f1; font-weight:600;">🔗 온라인에서 보기 (공유 링크)</a>'
+        f'</p>'
+    ) if drive_link else ""
 
     sections_html = ""
     for i, sec in enumerate(sections, 1):
@@ -245,6 +258,7 @@ def build_html_email(data: dict) -> str:
 
   <!-- 푸터 -->
   <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:24px 40px; text-align:center;">
+    {drive_link_html}
     <p style="margin:0; font-size:12px; color:#999;">
       {NEWSLETTER_NAME} · 매주 금요일 오전 5시 50분 발송<br>
       구독 취소를 원하시면 회신해주세요.
@@ -311,7 +325,7 @@ def build_text_email(data: dict) -> str:
     return "\n".join(lines)
 
 
-def send_email(data: dict) -> bool:
+def send_email(data: dict, html: str = None) -> bool:
     """Gmail SMTP를 통해 이메일을 발송합니다."""
     issue_number = data["issue_number"]
     date_str = data["date_str"]
@@ -325,7 +339,7 @@ def send_email(data: dict) -> bool:
     msg["To"] = RECIPIENT_EMAIL
 
     text_part = MIMEText(build_text_email(data), "plain", "utf-8")
-    html_part = MIMEText(build_html_email(data), "html", "utf-8")
+    html_part = MIMEText(html or build_html_email(data), "html", "utf-8")
 
     msg.attach(text_part)
     msg.attach(html_part)
@@ -352,6 +366,7 @@ def send_kakao_me(data: dict) -> bool:
 
     issue_number = data["issue_number"]
     tagline = data.get("tagline", "오늘의 AI 뉴스")
+    link_url = data.get("drive_link") or SITE_URL
 
     payload = {
         "template_object": json.dumps({
@@ -363,16 +378,16 @@ def send_kakao_me(data: dict) -> bool:
                 "image_width": 1200,
                 "image_height": 630,
                 "link": {
-                    "web_url": SITE_URL,
-                    "mobile_web_url": SITE_URL,
+                    "web_url": link_url,
+                    "mobile_web_url": link_url,
                 },
             },
             "buttons": [
                 {
                     "title": "뉴스레터 읽기",
                     "link": {
-                        "web_url": SITE_URL,
-                        "mobile_web_url": SITE_URL,
+                        "web_url": link_url,
+                        "mobile_web_url": link_url,
                     },
                 }
             ],
@@ -395,6 +410,66 @@ def send_kakao_me(data: dict) -> bool:
     except Exception as e:
         print(f"❌ 카카오 전송 오류: {e}")
         return False
+
+
+def get_or_create_drive_folder(service) -> str:
+    """'크리AI티브 AI Design Letter' 폴더를 Drive에서 찾거나 새로 만듭니다."""
+    # 환경 변수에 폴더 ID가 있으면 바로 사용
+    if GOOGLE_DRIVE_FOLDER_ID:
+        return GOOGLE_DRIVE_FOLDER_ID
+
+    folder_name = "크리AI티브 AI Design Letter"
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    results = service.files().list(q=query, fields="files(id, name)").execute()
+    folders = results.get("files", [])
+
+    if folders:
+        folder_id = folders[0]["id"]
+        print(f"📁 Drive 폴더 확인: {folder_name} (id={folder_id})")
+        return folder_id
+
+    # 폴더 생성
+    folder_meta = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
+    folder = service.files().create(body=folder_meta, fields="id").execute()
+    folder_id = folder.get("id")
+    print(f"📁 Drive 폴더 생성: {folder_name} (id={folder_id})")
+    return folder_id
+
+
+def upload_to_drive(html: str, data: dict) -> str:
+    """HTML 뉴스레터를 Google Drive에 업로드하고 공유 링크를 반환합니다."""
+    if not all([GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN]):
+        print("⚠️  GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN 없음 — Drive 업로드 건너뜀")
+        return ""
+
+    creds = Credentials(
+        token=None,
+        refresh_token=GOOGLE_REFRESH_TOKEN,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
+    service = build("drive", "v3", credentials=creds)
+
+    folder_id = get_or_create_drive_folder(service)
+
+    issue_number = data["issue_number"]
+    filename = f"크리AI티브_AI_Design_Letter_{issue_number:03d}.html"
+
+    file_metadata = {"name": filename, "mimeType": "text/html", "parents": [folder_id]}
+    media = MediaInMemoryUpload(html.encode("utf-8"), mimetype="text/html")
+    file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+    file_id = file.get("id")
+
+    # 누구나 볼 수 있도록 공개 공유 설정
+    service.permissions().create(
+        fileId=file_id,
+        body={"type": "anyone", "role": "reader"},
+    ).execute()
+
+    share_link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+    print(f"✅ Google Drive 업로드 완료: {share_link}")
+    return share_link
 
 
 def generate_og_image(data: dict, public_dir: str) -> None:
@@ -484,24 +559,33 @@ def main():
 
     print(f"✍️  뉴스레터 작성 완료: \"{data.get('tagline')}\"")
 
-    # HTML 파일 저장 (Netlify 배포용)
-    html = build_html_email(data)
-    save_html_files(data, html)
+    # HTML 생성 (Drive 링크 없는 버전 — 업로드용)
+    html_for_drive = build_html_email(data)
+    save_html_files(data, html_for_drive)
+
+    # Google Drive 업로드
+    print("☁️  Google Drive 업로드 중...")
+    drive_link = upload_to_drive(html_for_drive, data)
+    if drive_link:
+        data["drive_link"] = drive_link
+
+    # Drive 링크 포함한 이메일 HTML 재생성
+    html_for_email = build_html_email(data)
 
     # 이메일 발송
     print("📧 이메일 발송 중...")
-    send_email(data)
+    send_email(data, html_for_email)
 
     # 카카오 나에게 보내기
     print("💬 카카오 나에게 보내기 중...")
     send_kakao_me(data)
 
     # 공유 링크 출력
-    issue_url = f"{SITE_URL}/issues/{issue_number:03d}.html"
-    latest_url = SITE_URL
     print(f"\n🔗 공유 링크:")
-    print(f"   최신호: {latest_url}")
-    print(f"   #{issue_number:03d}호 영구 링크: {issue_url}")
+    if drive_link:
+        print(f"   Google Drive: {drive_link}")
+    else:
+        print(f"   {SITE_URL}/issues/{issue_number:03d}.html")
 
 
 if __name__ == "__main__":
