@@ -53,41 +53,49 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
     """Gemini API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
     today = datetime.now(KST).strftime("%Y-%m-%d")
 
-    prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터입니다. 한국어로 작성하며,
-독자가 AI 트렌드를 빠르게 파악할 수 있도록 명확하고 통찰력 있는 분석을 제공합니다.
+    prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터이자 트렌드 분석가입니다.
+독자는 디자이너, 기획자, 개발자 등 AI를 실무에 활용하는 한국의 크리에이티브 전문가입니다.
+이들은 전문 용어보다 '이게 내 일에 어떤 영향을 미치나'를 먼저 궁금해 합니다.
 
 오늘({today}) 기준 최신 AI 뉴스를 Google 검색으로 수집하고 분석해주세요.
 검색 키워드: "AI news {today}", "generative AI 2026", "LLM release 2026", "AI model update",
-"ComfyUI update 2026", "ComfyUI workflow", "vibe coding AI", "AI coding tools 2026",
-"AI interior design 2026", "AI architecture design"
+"ComfyUI update 2026", "vibe coding AI", "AI coding tools 2026",
+"AI interior design 2026", "AI design tools 2026", "AI workflow automation 2026"
 
-검색 결과를 바탕으로 오늘의 가장 중요한 AI 뉴스 5-8개를 선정하고,
-반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요.
+단어 사이 공백을 반드시 지켜주세요 (예: "바이브 코딩", "전체 애플리케이션"):
 
 {{
-  "tagline": "오늘의 핵심을 한 문장으로 (예: 'Seedance가 할리우드를 건드렸다')",
-  "summary": "오늘의 한 줄 총평 (이모지 포함, 2문장 이내)",
+  "tagline": "이번 호 핵심을 한 문장으로 (날카롭고 기억에 남는 문장)",
+  "summary": "편집장 노트: 이번 주 AI 흐름의 핵심 맥락 (2-3문장, 트렌드 변화의 의미 중심)",
+  "trend_article": {{
+    "title": "이번 호 핵심 트렌드 분석 제목 (명사형, 예: 'AI 에이전트 시대, 일하는 방식이 바뀐다')",
+    "subtitle": "부제 (한 줄, 트렌드의 핵심 변화 포인트)",
+    "intro": "도입부 (2문장): 독자의 공감을 이끄는 현재 상황 묘사",
+    "body": "본문 분석 (4-5문장): 이번 주 AI 트렌드의 구조적 변화, 왜 지금 중요한지, 어떤 방향으로 흘러가는지 전문적으로 분석. 반드시 단어 간 공백을 지켜주세요.",
+    "impact": "실무 시사점 (2-3문장): 디자이너·기획자·개발자가 지금 당장 주목해야 할 변화와 기회"
+  }},
   "sections": [
     {{
       "emoji": "섹션 이모지",
       "category": "카테고리명",
-      "title": "뉴스 제목",
-      "body": "뉴스 내용 (3-4문장, 핵심 사실 중심)",
-      "comment": "{AUTHOR_NAME}의 한마디 (이모지 포함, 날카로운 통찰)"
+      "title": "뉴스 제목 (단어 간 공백 필수)",
+      "body": "뉴스 분석 (3-4문장): 사실 + 맥락 + 의미. 단어 간 공백을 반드시 지켜주세요.",
+      "comment": "{AUTHOR_NAME}의 한마디: 실무자 관점의 날카로운 통찰 (이모지 포함)"
     }}
   ],
   "highlights": [
-    "핵심 요약 1",
-    "핵심 요약 2",
-    "핵심 요약 3"
+    "이번 호 핵심 인사이트 1 (실무 관점으로)",
+    "이번 호 핵심 인사이트 2",
+    "이번 호 핵심 인사이트 3"
   ]
 }}
 
-섹션은 최소 5개, 최대 8개. 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델,
-오픈소스·커뮤니티, 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향,
-ComfyUI·워크플로우, 바이브코딩·AI 개발도구, 인테리어·건축 AI.
-매주 뉴스가 있는 카테고리 위주로 선정하되, ComfyUI·워크플로우 / 바이브코딩·AI 개발도구 / 인테리어·건축 AI 섹션은
-관련 뉴스가 있을 경우 반드시 포함하세요."""
+섹션은 최소 5개, 최대 8개.
+카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델, 오픈소스·커뮤니티,
+음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향,
+ComfyUI·워크플로우, 바이브코딩·AI개발도구, 인테리어·건축 AI.
+ComfyUI·워크플로우 / 바이브코딩·AI개발도구 / 인테리어·건축 AI 섹션은 관련 뉴스가 있으면 반드시 포함."""
 
     # Gemini REST API + Google 검색 그라운딩 (gemini-2.0-flash)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GEMINI_API_KEY}"
@@ -141,8 +149,37 @@ def build_html_email(data: dict) -> str:
     date_str = data["date_str"]
     tagline = data.get("tagline", "오늘의 AI 뉴스")
     summary = data.get("summary", "")
+    trend_article = data.get("trend_article", {})
     sections = data.get("sections", [])
     highlights = data.get("highlights", [])
+
+    # 트렌드 아티클 섹션
+    trend_html = ""
+    if trend_article:
+        art_title = trend_article.get("title", "")
+        art_subtitle = trend_article.get("subtitle", "")
+        art_intro = trend_article.get("intro", "")
+        art_body = trend_article.get("body", "")
+        art_impact = trend_article.get("impact", "")
+        trend_html = f"""
+  <!-- 트렌드 아티클 -->
+  <tr><td style="background:#fff; padding:32px 40px 0;">
+    <div style="border-left:4px solid #6366f1; padding-left:16px; margin-bottom:8px;">
+      <span style="font-size:11px; color:#6366f1; font-weight:800; letter-spacing:2px; text-transform:uppercase;">이번 호 트렌드 분석</span>
+    </div>
+    <h2 style="margin:0 0 6px; font-size:22px; font-weight:800; color:#1a1a2e; line-height:1.35;">{art_title}</h2>
+    <p style="margin:0 0 20px; font-size:14px; color:#8b5cf6; font-weight:600;">{art_subtitle}</p>
+    <p style="margin:0 0 14px; color:#333; font-size:15px; line-height:1.85;">{art_intro}</p>
+    <p style="margin:0 0 14px; color:#444; font-size:15px; line-height:1.85;">{art_body}</p>
+    <div style="background:#f0f7ff; border-radius:10px; padding:16px 20px; border-left:3px solid #6366f1;">
+      <span style="font-size:12px; color:#6366f1; font-weight:700;">💡 실무 시사점</span>
+      <p style="margin:8px 0 0; color:#333; font-size:14px; line-height:1.75;">{art_impact}</p>
+    </div>
+  </td></tr>
+  <tr><td style="background:#fff; padding:16px 40px 0;">
+    <hr style="border:none; border-top:2px solid #f0f0f0;">
+  </td></tr>
+"""
 
     sections_html = ""
     for i, sec in enumerate(sections, 1):
@@ -157,10 +194,10 @@ def build_html_email(data: dict) -> str:
             <div style="font-size:12px; color:#6366f1; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">
                 {emoji} {category}
             </div>
-            <h2 style="margin:0 0 12px; font-size:18px; color:#1a1a2e; line-height:1.4;">
-                {emoji} {title}
-            </h2>
-            <p style="margin:0 0 16px; color:#444; line-height:1.8; font-size:15px;">
+            <h3 style="margin:0 0 12px; font-size:17px; color:#1a1a2e; line-height:1.4;">
+                {title}
+            </h3>
+            <p style="margin:0 0 16px; color:#444; line-height:1.85; font-size:15px;">
                 {body}
             </p>
             <div style="background:#f8f7ff; border-radius:8px; padding:12px 16px; border-left:3px solid #a78bfa;">
@@ -173,7 +210,7 @@ def build_html_email(data: dict) -> str:
 
     highlights_html = ""
     for h in highlights:
-        highlights_html += f'<li style="margin-bottom:8px; color:#e8e8e8; font-size:15px;">{h}</li>'
+        highlights_html += f'<li style="margin-bottom:10px; color:#e8e8e8; font-size:15px; line-height:1.6;">{h}</li>'
 
     og_title = f"{NEWSLETTER_NAME} #{issue_number:03d} — {tagline}"
     og_description = summary.replace("\"", "&quot;")
@@ -211,31 +248,32 @@ def build_html_email(data: dict) -> str:
     </div>
   </td></tr>
 
-  <!-- 오늘의 총평 -->
+  <!-- 편집장 노트 -->
   <tr><td style="background:#fff; padding:24px 40px 0;">
     <div style="background:#f0f0ff; border-radius:10px; padding:16px 20px;">
-      <span style="font-size:13px; color:#6366f1; font-weight:700;">💬 오늘의 한 줄 총평</span>
-      <p style="margin:8px 0 0; color:#333; font-size:15px; line-height:1.7;">{summary}</p>
+      <span style="font-size:13px; color:#6366f1; font-weight:700;">💬 편집장 노트</span>
+      <p style="margin:8px 0 0; color:#333; font-size:15px; line-height:1.75;">{summary}</p>
     </div>
   </td></tr>
 
-  <!-- 구분선 -->
-  <tr><td style="background:#fff; padding:24px 40px 0;">
-    <hr style="border:none; border-top:2px solid #f0f0f0;">
+  {trend_html}
+
+  <!-- 뉴스 섹션 헤더 -->
+  <tr><td style="background:#fff; padding:24px 40px 8px;">
+    <div style="font-size:11px; color:#999; font-weight:700; letter-spacing:2px; text-transform:uppercase;">이번 주 주요 뉴스</div>
   </td></tr>
 
   <!-- 섹션들 -->
-  <tr><td style="background:#f8f8fc; padding:32px 40px;">
+  <tr><td style="background:#f8f8fc; padding:24px 40px;">
     {sections_html}
   </td></tr>
 
-  <!-- 핵심 요약 -->
+  <!-- 핵심 인사이트 -->
   <tr><td style="background:#fff; padding:32px 40px;">
     <div style="background:#1a1a2e; border-radius:12px; padding:24px 28px;">
       <div style="font-size:14px; color:#a78bfa; font-weight:700; margin-bottom:16px;">
-        {NEWSLETTER_NAME} #{issue_number:03d} 완료 ✅
+        이번 호 핵심 인사이트 ✅
       </div>
-      <div style="font-size:13px; color:#fff; font-weight:600; margin-bottom:12px;">오늘의 핵심 3줄:</div>
       <ul style="margin:0; padding-left:20px; color:#ccc;">
         {highlights_html}
       </ul>
@@ -245,7 +283,7 @@ def build_html_email(data: dict) -> str:
   <!-- 푸터 -->
   <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:24px 40px; text-align:center;">
     <p style="margin:0; font-size:12px; color:#999;">
-      {NEWSLETTER_NAME} · 매주 금요일 오전 5시 50분 발송<br>
+      {NEWSLETTER_NAME} · 매주 화요일·금요일 오전 5시 50분 발송<br>
       구독 취소를 원하시면 회신해주세요.
     </p>
   </td></tr>
@@ -329,17 +367,33 @@ def send_email(data: dict, html: str = None) -> bool:
     msg.attach(text_part)
     msg.attach(html_part)
 
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        print("❌ GMAIL_USER 또는 GMAIL_APP_PASSWORD 환경 변수가 비어 있습니다.")
+        return False
+    if not RECIPIENT_EMAIL:
+        print("❌ RECIPIENT_EMAIL 환경 변수가 비어 있습니다.")
+        return False
+
+    print(f"[DEBUG] 발신: {GMAIL_USER} → 수신: {RECIPIENT_EMAIL}")
+    print(f"[DEBUG] App Password 길이: {len(GMAIL_APP_PASSWORD)}자")
+
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.set_debuglevel(0)
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_USER, RECIPIENT_EMAIL, msg.as_string())
         print(f"✅ 이메일 발송 완료: {RECIPIENT_EMAIL}")
         return True
-    except smtplib.SMTPAuthenticationError:
-        print("❌ Gmail 인증 실패. GMAIL_APP_PASSWORD를 확인하세요.")
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ Gmail 인증 실패: {e}")
+        print("   → GitHub Secret GMAIL_APP_PASSWORD가 Google 앱 비밀번호(16자리)인지 확인하세요.")
+        print("   → Google 계정 → 보안 → 2단계 인증 ON → 앱 비밀번호 생성")
+        return False
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"❌ 수신 주소 거부됨: {e}")
         return False
     except Exception as e:
-        print(f"❌ 이메일 발송 실패: {e}")
+        print(f"❌ 이메일 발송 실패 ({type(e).__name__}): {e}")
         return False
 
 
