@@ -250,7 +250,7 @@ def build_html_email(data: dict) -> str:
   <!-- 헤더 -->
   <tr><td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%); border-radius:16px 16px 0 0; padding:36px 40px;">
     <div style="font-size:12px; color:rgba(255,255,255,0.7); font-weight:600; letter-spacing:2px; margin-bottom:8px;">
-      {NEWSLETTER_NAME} #{issue_number:03d} _ {date_str}
+      {NEWSLETTER_NAME} _ {date_str}
     </div>
     <div style="font-size:26px; font-weight:800; color:#fff; line-height:1.3;">
       "{tagline}"
@@ -290,10 +290,16 @@ def build_html_email(data: dict) -> str:
   </td></tr>
 
   <!-- 푸터 -->
-  <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:24px 40px; text-align:center;">
-    <p style="margin:0; font-size:12px; color:#999;">
-      {NEWSLETTER_NAME} · 매주 화요일·금요일 오전 5시 50분 발송<br>
-      구독 취소를 원하시면 회신해주세요.
+  <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:28px 40px; text-align:center;">
+    <p style="margin:0 0 10px; font-size:13px; color:#555;">
+      🌐 <a href="https://cri-ai-tive.com" style="color:#6366f1; text-decoration:none;">cri-ai-tive.com</a>
+      &nbsp;&nbsp;·&nbsp;&nbsp;
+      <a href="https://aitive.me" style="color:#6366f1; text-decoration:none;">aitive.me</a>
+      &nbsp;&nbsp;&nbsp;
+      📺 <a href="https://youtube.com/@cri-ai-tive" style="color:#6366f1; text-decoration:none;">youtube.com/@cri-ai-tive</a>
+    </p>
+    <p style="margin:0; font-size:11px; color:#aaa;">
+      {NEWSLETTER_NAME} · 매주 화요일·금요일 오전 5시 50분 발송 · 구독 취소를 원하시면 회신해주세요.
     </p>
   </td></tr>
 
@@ -363,7 +369,7 @@ def send_email(data: dict, html: str = None) -> bool:
     date_str = data["date_str"]
     tagline = data.get("tagline", "오늘의 AI 뉴스")
 
-    subject = f"[{NEWSLETTER_NAME} #{issue_number:03d}] {date_str} — \"{tagline}\""
+    subject = f"[{NEWSLETTER_NAME}] {date_str} — \"{tagline}\""
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
