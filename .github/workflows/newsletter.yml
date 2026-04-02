@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
       - name: 코드 체크아웃
@@ -35,6 +37,7 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           NEWSLETTER_NAME: ${{ secrets.NEWSLETTER_NAME }}
           AUTHOR_NAME: ${{ secrets.AUTHOR_NAME }}
+          SITE_URL: https://shine2122.github.io/AI_News
         run: python newsletter.py
 
       - name: 변경사항 커밋 & 푸시
@@ -44,3 +47,10 @@ jobs:
           git add public/ .issue_counter
           git diff --staged --quiet || git commit -m "newsletter: $(date +'%Y-%m-%d') 뉴스레터 발행"
           git push
+
+      - name: GitHub Pages 배포
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_files: true
