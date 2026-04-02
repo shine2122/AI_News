@@ -215,6 +215,7 @@ def build_html_email(data: dict) -> str:
     og_title = f"{NEWSLETTER_NAME} #{issue_number:03d} — {tagline}"
     og_description = summary.replace("\"", "&quot;")
     og_image = f"{SITE_URL}/og-image.png"
+    web_url = f"{SITE_URL}/issues/{issue_number:03d}.html"
 
     html = f"""<!DOCTYPE html>
 <html lang="ko">
@@ -237,6 +238,14 @@ def build_html_email(data: dict) -> str:
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;">
 <tr><td align="center" style="padding:32px 16px;">
 <table width="640" cellpadding="0" cellspacing="0" style="max-width:640px; width:100%;">
+
+  <!-- 웹에서 보기 -->
+  <tr><td style="padding:0 0 12px; text-align:center;">
+    <p style="margin:0; font-size:12px; color:#999;">
+      이메일이 제대로 보이지 않나요?
+      <a href="{web_url}" style="color:#6366f1; text-decoration:underline;">웹에서 보기</a>
+    </p>
+  </td></tr>
 
   <!-- 헤더 -->
   <tr><td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%); border-radius:16px 16px 0 0; padding:36px 40px;">
