@@ -51,16 +51,25 @@ def get_korean_date(dt: datetime) -> str:
 
 def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
     """Gemini API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
-    today = datetime.now(KST).strftime("%Y-%m-%d")
+    now = datetime.now(KST)
+    today = now.strftime("%Y-%m-%d")
+    start_date = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
     prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터이자 트렌드 분석가입니다.
 독자는 디자이너, 기획자, 개발자 등 AI를 실무에 활용하는 한국의 크리에이티브 전문가입니다.
 이들은 전문 용어보다 '이게 내 일에 어떤 영향을 미치나'를 먼저 궁금해 합니다.
 
-오늘({today}) 기준 최신 AI 뉴스를 Google 검색으로 수집하고 분석해주세요.
-검색 키워드: "AI news {today}", "generative AI 2026", "LLM release 2026", "AI model update",
-"ComfyUI update 2026", "vibe coding AI", "AI coding tools 2026",
-"AI interior design 2026", "AI design tools 2026", "AI workflow automation 2026"
+Google 검색으로 {start_date} ~ {today} 사이에 발표된 최신 AI 뉴스를 수집하고 분석해주세요.
+
+⚠️ 반드시 지켜야 할 규칙:
+1. {start_date} 이전에 발표된 뉴스는 절대 포함하지 마세요.
+2. 각 섹션은 서로 다른 뉴스여야 합니다. 같은 회사/제품/주제를 2개 이상 다루지 마세요.
+3. 검색 결과에서 날짜를 반드시 확인하고, 날짜가 불명확한 오래된 기사는 제외하세요.
+
+검색 키워드 (날짜 범위 {start_date}~{today} 명시하여 검색):
+"AI news {today}", "AI model release {today}", "generative AI {today}",
+"LLM update {today}", "ComfyUI update {today}", "vibe coding {today}",
+"AI design tools {today}", "AI workflow {today}", "AI news this week"
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요.
 단어 사이 공백을 반드시 지켜주세요 (예: "바이브 코딩", "전체 애플리케이션"):
