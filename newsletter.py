@@ -53,7 +53,8 @@ def collect_and_generate_newsletter(issue_number: int, date_str: str) -> dict:
     """Gemini API를 사용해 AI 뉴스를 수집하고 뉴스레터를 생성합니다."""
     now = datetime.now(KST)
     today = now.strftime("%Y-%m-%d")
-    start_date = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+    # 화요일/금요일 발송 기준 — 3일 이내 뉴스만 다룸
+    start_date = (now - timedelta(days=3)).strftime("%Y-%m-%d")
 
     prompt = f"""당신은 AI 업계 전문 뉴스레터 에디터이자 트렌드 분석가입니다.
 독자는 디자이너, 기획자, 개발자 등 AI를 실무에 활용하는 한국의 크리에이티브 전문가입니다.
@@ -78,11 +79,12 @@ Google 검색으로 {start_date} ~ {today} 사이에 발표된 최신 AI 뉴스�
   "tagline": "이번 호 핵심을 한 문장으로 (날카롭고 기억에 남는 문장)",
   "summary": "편집장 노트: 이번 주 AI 흐름의 핵심 맥락 (2-3문장, 트렌드 변화의 의미 중심)",
   "trend_article": {{
-    "title": "이번 호 핵심 트렌드 분석 제목 (명사형, 예: 'AI 에이전트 시대, 일하는 방식이 바뀐다')",
-    "subtitle": "부제 (한 줄, 트렌드의 핵심 변화 포인트)",
-    "intro": "도입부 (2문장): 독자의 공감을 이끄는 현재 상황 묘사",
-    "body": "본문 분석 (4-5문장): 이번 주 AI 트렌드의 구조적 변화, 왜 지금 중요한지, 어떤 방향으로 흘러가는지 전문적으로 분석. 반드시 단어 간 공백을 지켜주세요.",
-    "impact": "실무 시사점 (2-3문장): 디자이너·기획자·개발자가 지금 당장 주목해야 할 변화와 기회"
+    "title": "이번 호 여러 뉴스를 관통하는 하나의 주제. 독자가 미처 몰랐던 시각이나 역설적 통찰을 담은 제목.",
+    "subtitle": "이 주제가 왜 지금 이 시점에 중요한지 한 문장으로.",
+    "intro": "이번 {start_date}~{today} 뉴스에서 발견한 흥미로운 패턴이나 역설로 시작하세요. '어, 그러네?' 하고 고개 끄덕이게 만드는 구체적 사실이나 수치로 열어도 좋습니다. 2-3문장.",
+    "body": "이 패턴의 구조적 배경을 분석하세요. 단순히 뉴스를 나열하지 말고, 이번 주 여러 사건들이 왜 같은 방향을 가리키는지, 업계의 이면에서 무슨 일이 일어나고 있는지를 전문가 시각으로 설명하세요. 4-5문장.",
+    "body_para2": "반론 또는 주의점. '하지만', '그럼에도 불구하고', '많은 사람들이 놓치는 것은' 등으로 자연스럽게 시작하세요. 낙관론과 현실적 시각의 균형을 맞추세요. 2-3문장.",
+    "impact": "구체적 행동 권고. '~를 시작해보세요', '~에 주목하세요', '~를 준비할 때입니다' 같은 실질적 제안으로 마무리. 디자이너·기획자·개발자 각자에게 의미 있는 내용으로. 2-3문장."
   }},
   "sections": [
     {{
@@ -169,6 +171,7 @@ def build_html_email(data: dict) -> str:
         art_subtitle = trend_article.get("subtitle", "")
         art_intro = trend_article.get("intro", "")
         art_body = trend_article.get("body", "")
+        art_body_para2 = trend_article.get("body_para2", "")
         art_impact = trend_article.get("impact", "")
         trend_html = f"""
   <!-- 트렌드 아티클 -->
@@ -177,12 +180,13 @@ def build_html_email(data: dict) -> str:
       <span style="font-size:11px; color:#6366f1; font-weight:800; letter-spacing:2px; text-transform:uppercase;">이번 호 트렌드 분석</span>
     </div>
     <h2 style="margin:0 0 6px; font-size:22px; font-weight:800; color:#1a1a2e; line-height:1.35;">{art_title}</h2>
-    <p style="margin:0 0 20px; font-size:14px; color:#8b5cf6; font-weight:600;">{art_subtitle}</p>
-    <p style="margin:0 0 14px; color:#333; font-size:15px; line-height:1.85;">{art_intro}</p>
-    <p style="margin:0 0 14px; color:#444; font-size:15px; line-height:1.85;">{art_body}</p>
-    <div style="background:#f0f7ff; border-radius:10px; padding:16px 20px; border-left:3px solid #6366f1;">
+    <p style="margin:0 0 24px; font-size:14px; color:#8b5cf6; font-weight:600;">{art_subtitle}</p>
+    <p style="margin:0 0 18px; color:#222; font-size:16px; line-height:1.9; font-weight:500;">{art_intro}</p>
+    <p style="margin:0 0 18px; color:#444; font-size:15px; line-height:1.9;">{art_body}</p>
+    {'<p style="margin:0 0 24px; color:#444; font-size:15px; line-height:1.9;">' + art_body_para2 + '</p>' if art_body_para2 else ''}
+    <div style="background:#f0f7ff; border-radius:10px; padding:18px 22px; border-left:3px solid #6366f1;">
       <span style="font-size:12px; color:#6366f1; font-weight:700;">💡 실무 시사점</span>
-      <p style="margin:8px 0 0; color:#333; font-size:14px; line-height:1.75;">{art_impact}</p>
+      <p style="margin:10px 0 0; color:#333; font-size:15px; line-height:1.8;">{art_impact}</p>
     </div>
   </td></tr>
   <tr><td style="background:#fff; padding:16px 40px 0;">
