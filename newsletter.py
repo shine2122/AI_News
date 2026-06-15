@@ -4,9 +4,11 @@ AI 뉴스레터 자동 발송 스크립트
 매일 아침 5시에 최신 AI 뉴스를 수집하고 이메일로 발송합니다.
 """
 
+import argparse
 import os
 import smtplib
 import json
+import sys
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -15,16 +17,34 @@ import requests
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 load_dotenv()
 
-# 환경 변수 (앞뒤 공백 자동 제거)
-GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
-GMAIL_USER = (os.getenv("GMAIL_USER") or "").strip()
-GMAIL_APP_PASSWORD = (os.getenv("GMAIL_APP_PASSWORD") or "").strip()
-RECIPIENT_EMAIL = (os.getenv("RECIPIENT_EMAIL") or "").strip()
-NEWSLETTER_NAME = (os.getenv("NEWSLETTER_NAME") or "크리AI티브 AI Design Letter").strip()
-AUTHOR_NAME = (os.getenv("AUTHOR_NAME") or "제시카AI").strip()
-SITE_URL = (os.getenv("SITE_URL") or "https://aiinfor.netlify.app").strip()
+# 환경 변수 정규화
+
+def normalize_env_value(name: str, default: str = "") -> str:
+    value = os.getenv(name, default)
+    if not isinstance(value, str):
+        return default
+    stripped = value.strip()
+    return stripped if stripped else default
+
+
+def normalize_app_password(value: str) -> str:
+    return "".join(value.split())
+
+
+GEMINI_API_KEY = normalize_env_value("GEMINI_API_KEY")
+GMAIL_USER = normalize_env_value("GMAIL_USER")
+GMAIL_APP_PASSWORD = normalize_app_password(os.getenv("GMAIL_APP_PASSWORD") or "")
+RECIPIENT_EMAIL = normalize_env_value("RECIPIENT_EMAIL")
+NEWSLETTER_NAME = normalize_env_value("NEWSLETTER_NAME", "크리AI티브 AI Design Letter")
+AUTHOR_NAME = normalize_env_value("AUTHOR_NAME", "제시카AI")
+SITE_URL = normalize_env_value("SITE_URL", "https://aiinfor.netlify.app")
 
 KST = timezone(timedelta(hours=9))
 
@@ -493,14 +513,31 @@ def save_html_files(data: dict, html: str) -> None:
     print(f"💾 HTML 저장 완료: public/index.html, public/issues/{issue_number:03d}.html")
 
 
-def main():
+def parse_args():
+    parser = argparse.ArgumentParser(description="AI 뉴스레터 자동 생성 및 발송")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="메일 발송 없이 HTML/OG 이미지 생성 및 저장만 수행합니다.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+
     # 환경 변수 확인
-    required_vars = ["GEMINI_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "RECIPIENT_EMAIL"]
-    missing = [v for v in required_vars if not os.getenv(v)]
+    required_vars = {
+        "GEMINI_API_KEY": GEMINI_API_KEY,
+        "GMAIL_USER": GMAIL_USER,
+        "GMAIL_APP_PASSWORD": GMAIL_APP_PASSWORD,
+        "RECIPIENT_EMAIL": RECIPIENT_EMAIL,
+    }
+    missing = [name for name, value in required_vars.items() if not value]
     if missing:
         print(f"❌ 필수 환경 변수가 없습니다: {', '.join(missing)}")
         print("   .env 파일을 설정하세요. (.env.example 참고)")
-        return
+        return 1
 
     now = datetime.now(KST)
     date_str = get_korean_date(now)
@@ -518,13 +555,19 @@ def main():
     html = build_html_email(data)
     save_html_files(data, html)
 
-    # 이메일 발송
-    print("📧 이메일 발송 중...")
-    send_email(data, html)
+    if args.dry_run:
+        print("🛑 dry run 모드: 이메일 발송 없이 종료합니다.")
+    else:
+        # 이메일 발송
+        print("📧 이메일 발송 중...")
+        if not send_email(data, html):
+            return 1
 
     # 공유 링크 출력
     print(f"\n🔗 공유 링크: {SITE_URL}/issues/{issue_number:03d}.html")
+    print("   💡 웹에서 보기 링크가 404가 나올 경우, public/ 내용을 Vercel에 다시 배포해야 합니다.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
