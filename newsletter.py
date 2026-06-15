@@ -8,6 +8,7 @@ import argparse
 import os
 import smtplib
 import json
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -31,7 +32,9 @@ def normalize_env_value(name: str, default: str = "") -> str:
     if not isinstance(value, str):
         return default
     stripped = value.strip()
-    return stripped if stripped else default
+    if not stripped or "???" in stripped:
+        return default
+    return stripped
 
 
 def normalize_app_password(value: str) -> str:
@@ -44,9 +47,24 @@ GMAIL_APP_PASSWORD = normalize_app_password(os.getenv("GMAIL_APP_PASSWORD") or "
 RECIPIENT_EMAIL = normalize_env_value("RECIPIENT_EMAIL")
 NEWSLETTER_NAME = normalize_env_value("NEWSLETTER_NAME", "크리AI티브 AI Design Letter")
 AUTHOR_NAME = normalize_env_value("AUTHOR_NAME", "제시카AI")
+COMMENT_AUTHOR_NAME = "크리AI티브"
 SITE_URL = normalize_env_value("SITE_URL", "https://aiinfor.netlify.app")
 
 KST = timezone(timedelta(hours=9))
+
+
+def clean_comment(comment: str) -> str:
+    """생성 모델이 덧붙인 중복 '한마디' 라벨을 제거합니다."""
+    if not isinstance(comment, str):
+        return ""
+    cleaned = comment.strip()
+    prefixes = [
+        rf"{re.escape(COMMENT_AUTHOR_NAME)}(?:\s*AI)?의\s*한마디\s*[:：]\s*",
+        r"(?:아이티브|제시카AI|AI)의\s*한마디\s*[:：]\s*",
+    ]
+    for pattern in prefixes:
+        cleaned = re.sub(rf"^([\W_]*\s*)?{pattern}", r"\1", cleaned)
+    return cleaned.strip()
 
 
 def get_issue_number() -> int:
@@ -112,7 +130,7 @@ Google 검색으로 {start_date} ~ {today} 사이에 발표된 최신 AI 뉴스�
       "category": "카테고리명",
       "title": "뉴스 제목 (단어 간 공백 필수)",
       "body": "뉴스 분석 (3-4문장): 사실 + 맥락 + 의미. 단어 간 공백을 반드시 지켜주세요.",
-      "comment": "{AUTHOR_NAME}의 한마디: 실무자 관점의 날카로운 통찰 (이모지 포함)"
+      "comment": "실무자 관점의 날카로운 통찰 (이모지 1개로 시작, 'AI의 한마디:' 같은 라벨은 절대 쓰지 않음)"
     }}
   ],
   "highlights": [
@@ -126,6 +144,7 @@ Google 검색으로 {start_date} ~ {today} 사이에 발표된 최신 AI 뉴스�
 카테고리: 영상 생성 AI, 이미지 생성 AI, 언어 모델, 오픈소스·커뮤니티,
 음성·음악 AI, 크리에이터 경제, AI 규제·정책, 기업·투자, 중국 AI 동향,
 ComfyUI·워크플로우, 바이브코딩·AI개발도구, 인테리어·건축 AI.
+comment에는 "{COMMENT_AUTHOR_NAME}의 한마디:", "AI의 한마디:" 같은 라벨을 넣지 말고 통찰 문장만 작성.
 ComfyUI·워크플로우 / 바이브코딩·AI개발도구 / 인테리어·건축 AI 섹션은 관련 뉴스가 있으면 반드시 포함."""
 
     # Gemini REST API + Google 검색 그라운딩 (gemini-2.0-flash)
@@ -220,7 +239,7 @@ def build_html_email(data: dict) -> str:
         category = sec.get("category", "")
         title = sec.get("title", "")
         body = sec.get("body", "")
-        comment = sec.get("comment", "")
+        comment = clean_comment(sec.get("comment", ""))
 
         sections_html += f"""
         <div style="margin-bottom:32px; padding:24px; background:#fff; border-radius:12px; border-left:4px solid #6366f1;">
@@ -234,7 +253,7 @@ def build_html_email(data: dict) -> str:
                 {body}
             </p>
             <div style="background:#f8f7ff; border-radius:8px; padding:12px 16px; border-left:3px solid #a78bfa;">
-                <span style="font-size:13px; color:#6366f1; font-weight:600;">☞ {AUTHOR_NAME}의 한마디:</span>
+                <span style="font-size:13px; color:#6366f1; font-weight:600;">☞ {COMMENT_AUTHOR_NAME}의 한마디:</span>
                 <span style="font-size:14px; color:#555; margin-left:6px;">{comment}</span>
             </div>
         </div>
@@ -370,7 +389,7 @@ def build_text_email(data: dict) -> str:
         category = sec.get("category", "")
         title = sec.get("title", "")
         body = sec.get("body", "")
-        comment = sec.get("comment", "")
+        comment = clean_comment(sec.get("comment", ""))
 
         lines += [
             f"{i}. {emoji} {category}",
@@ -379,7 +398,7 @@ def build_text_email(data: dict) -> str:
             "",
             body,
             "",
-            f"☞ {AUTHOR_NAME}의 한마디: {comment}",
+            f"☞ {COMMENT_AUTHOR_NAME}의 한마디: {comment}",
             "",
             "-" * 50,
             "",
