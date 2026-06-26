@@ -5,17 +5,22 @@ AI 뉴스레터 자동 발송 스크립트
 """
 
 import argparse
+import mimetypes
 import os
 import smtplib
 import json
 import re
 import sys
 import textwrap
+from io import BytesIO
 from datetime import datetime, timezone, timedelta
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape as html_escape
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -54,6 +59,8 @@ COMMENT_AUTHOR_NAME = "크리AI티브"
 SITE_URL = normalize_env_value("SITE_URL", "https://aiinfor.netlify.app")
 SECTION_IMAGE_MAX_WIDTH = int(normalize_env_value("SECTION_IMAGE_MAX_WIDTH", "960"))
 SECTION_IMAGE_JPEG_QUALITY = int(normalize_env_value("SECTION_IMAGE_JPEG_QUALITY", "78"))
+EMAIL_INLINE_IMAGE_MAX_WIDTH = int(normalize_env_value("EMAIL_INLINE_IMAGE_MAX_WIDTH", "960"))
+EMAIL_INLINE_IMAGE_JPEG_QUALITY = int(normalize_env_value("EMAIL_INLINE_IMAGE_JPEG_QUALITY", "78"))
 
 KST = timezone(timedelta(hours=9))
 
@@ -77,6 +84,32 @@ def public_asset_url(local_path: str) -> str:
     if not rel_path:
         return ""
     return f"{SITE_URL.rstrip('/')}/{quote(rel_path, safe='/-_.~')}"
+
+
+def local_path_from_public_url(src: str) -> str:
+    """SITE_URL 아래의 공개 이미지 URL을 로컬 public/ 파일 경로로 바꿉니다."""
+    if not isinstance(src, str):
+        return ""
+
+    parsed_src = urlparse(src.strip())
+    parsed_site = urlparse(SITE_URL.rstrip("/"))
+    if parsed_src.scheme not in ("http", "https"):
+        return ""
+    if parsed_src.scheme != parsed_site.scheme or parsed_src.netloc != parsed_site.netloc:
+        return ""
+
+    rel_path = unquote(parsed_src.path.lstrip("/"))
+    if not rel_path:
+        return ""
+
+    public_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "public"))
+    local_path = os.path.abspath(os.path.join(public_dir, rel_path.replace("/", os.sep)))
+    try:
+        if os.path.commonpath([public_dir, local_path]) != public_dir:
+            return ""
+    except ValueError:
+        return ""
+    return local_path if os.path.exists(local_path) else ""
 
 
 def local_path_from_image_src(src: str) -> str:
@@ -105,6 +138,8 @@ def optimize_section_image_src(src: str, issue_number: int, section_index: int) 
     """섹션 이미지를 웹/메일용 JPEG로 압축하고 공개 URL을 반환합니다."""
     local_path = local_path_from_image_src(src)
     if not local_path:
+        local_path = local_path_from_public_url(src)
+    if not local_path:
         return normalize_image_src(src)
 
     if not public_asset_relative_path(local_path) or not os.path.exists(local_path):
@@ -130,15 +165,104 @@ def optimize_section_image_src(src: str, issue_number: int, section_index: int) 
             new_height = round(img.height * SECTION_IMAGE_MAX_WIDTH / img.width)
             img = img.resize((SECTION_IMAGE_MAX_WIDTH, new_height), Image.Resampling.LANCZOS)
 
+        save_path = output_path
+        replace_original = os.path.abspath(local_path) == os.path.abspath(output_path)
+        if replace_original:
+            save_path = f"{output_path}.tmp"
+
         img.save(
-            output_path,
+            save_path,
             "JPEG",
             quality=SECTION_IMAGE_JPEG_QUALITY,
             optimize=True,
             progressive=True,
         )
 
+    if os.path.abspath(local_path) == os.path.abspath(output_path):
+        os.replace(save_path, output_path)
+
     return public_asset_url(output_path)
+
+
+def image_path_from_html_src(src: str) -> str:
+    """HTML img src에서 inline 첨부 가능한 로컬 이미지 경로를 찾습니다."""
+    if not isinstance(src, str):
+        return ""
+    src = src.strip()
+    if not src or src.startswith(("data:", "cid:")):
+        return ""
+
+    local_path = local_path_from_public_url(src)
+    if local_path:
+        return local_path
+
+    local_path = local_path_from_image_src(src)
+    if local_path and os.path.exists(local_path):
+        return local_path
+    return ""
+
+
+def build_inline_image_part(path: str) -> MIMEBase:
+    """로컬 이미지를 메일용 Content-ID MIME 파트로 만듭니다."""
+    content_type, _ = mimetypes.guess_type(path)
+    maintype, subtype = (content_type or "application/octet-stream").split("/", 1)
+
+    if maintype == "image":
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode not in ("RGB", "L"):
+                background = Image.new("RGB", img.size, "white")
+                if img.mode in ("RGBA", "LA"):
+                    background.paste(img, mask=img.getchannel("A"))
+                else:
+                    background.paste(img.convert("RGB"))
+                img = background
+            else:
+                img = img.convert("RGB")
+
+            if img.width > EMAIL_INLINE_IMAGE_MAX_WIDTH:
+                new_height = round(img.height * EMAIL_INLINE_IMAGE_MAX_WIDTH / img.width)
+                img = img.resize((EMAIL_INLINE_IMAGE_MAX_WIDTH, new_height), Image.Resampling.LANCZOS)
+
+            buffer = BytesIO()
+            img.save(
+                buffer,
+                "JPEG",
+                quality=EMAIL_INLINE_IMAGE_JPEG_QUALITY,
+                optimize=True,
+                progressive=True,
+            )
+        part = MIMEImage(buffer.getvalue(), _subtype="jpeg")
+    else:
+        with open(path, "rb") as f:
+            payload = f.read()
+        part = MIMEBase(maintype, subtype)
+        part.set_payload(payload)
+        encoders.encode_base64(part)
+    return part
+
+
+def prepare_html_with_inline_images(html: str) -> tuple[str, list[tuple[str, str]]]:
+    """공개 이미지 URL을 cid로 바꾸고 첨부할 이미지 목록을 반환합니다."""
+    cid_by_path: dict[str, str] = {}
+    inline_images: list[tuple[str, str]] = []
+
+    def replace_src(match: re.Match) -> str:
+        prefix, src, suffix = match.groups()
+        local_path = image_path_from_html_src(src)
+        if not local_path:
+            return match.group(0)
+
+        abs_path = os.path.abspath(local_path)
+        cid = cid_by_path.get(abs_path)
+        if not cid:
+            cid = f"newsletter-image-{len(cid_by_path) + 1}"
+            cid_by_path[abs_path] = cid
+            inline_images.append((cid, abs_path))
+        return f'{prefix}cid:{cid}{suffix}'
+
+    inlined_html = re.sub(r'(src=["\'])([^"\']+)(["\'])', replace_src, html)
+    return inlined_html, inline_images
 
 
 def normalize_image_src(src: str) -> str:
@@ -637,17 +761,28 @@ def send_email(data: dict, html: str = None) -> bool:
     tagline = data.get("tagline", "오늘의 AI 뉴스")
 
     subject = f"[{NEWSLETTER_NAME}] {date_str} — \"{tagline}\""
+    email_html = html or build_html_email(data)
+    email_html, inline_images = prepare_html_with_inline_images(email_html)
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("related")
     msg["Subject"] = subject
     msg["From"] = GMAIL_USER
     msg["To"] = RECIPIENT_EMAIL
 
+    alternative_part = MIMEMultipart("alternative")
     text_part = MIMEText(build_text_email(data), "plain", "utf-8")
-    html_part = MIMEText(html or build_html_email(data), "html", "utf-8")
+    html_part = MIMEText(email_html, "html", "utf-8")
 
-    msg.attach(text_part)
-    msg.attach(html_part)
+    alternative_part.attach(text_part)
+    alternative_part.attach(html_part)
+    msg.attach(alternative_part)
+
+    for cid, image_path in inline_images:
+        image_part = build_inline_image_part(image_path)
+        image_part.add_header("Content-ID", f"<{cid}>")
+        image_part.add_header("Content-Disposition", "inline")
+        image_part.add_header("Content-Location", os.path.basename(image_path))
+        msg.attach(image_part)
 
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         print("❌ GMAIL_USER 또는 GMAIL_APP_PASSWORD 환경 변수가 비어 있습니다.")
@@ -658,6 +793,7 @@ def send_email(data: dict, html: str = None) -> bool:
 
     print(f"[DEBUG] 발신: {GMAIL_USER} → 수신: {RECIPIENT_EMAIL}")
     print(f"[DEBUG] App Password 길이: {len(GMAIL_APP_PASSWORD)}자")
+    print(f"[DEBUG] inline 이미지 첨부: {len(inline_images)}개")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
