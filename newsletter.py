@@ -10,13 +10,16 @@ import smtplib
 import json
 import re
 import sys
+import textwrap
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape as html_escape
+from urllib.parse import quote
 
 import requests
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -49,8 +52,113 @@ NEWSLETTER_NAME = normalize_env_value("NEWSLETTER_NAME", "크리AI티브 AI Desi
 AUTHOR_NAME = normalize_env_value("AUTHOR_NAME", "제시카AI")
 COMMENT_AUTHOR_NAME = "크리AI티브"
 SITE_URL = normalize_env_value("SITE_URL", "https://aiinfor.netlify.app")
+SECTION_IMAGE_MAX_WIDTH = int(normalize_env_value("SECTION_IMAGE_MAX_WIDTH", "960"))
+SECTION_IMAGE_JPEG_QUALITY = int(normalize_env_value("SECTION_IMAGE_JPEG_QUALITY", "78"))
 
 KST = timezone(timedelta(hours=9))
+
+
+def public_asset_relative_path(local_path: str) -> str:
+    """public/ 안의 로컬 파일 경로를 배포 기준 상대 경로로 바꿉니다."""
+    base_dir = os.path.dirname(__file__)
+    public_dir = os.path.abspath(os.path.join(base_dir, "public"))
+    abs_path = os.path.abspath(local_path)
+    try:
+        if os.path.commonpath([public_dir, abs_path]) != public_dir:
+            return ""
+    except ValueError:
+        return ""
+    return os.path.relpath(abs_path, public_dir).replace(os.sep, "/")
+
+
+def public_asset_url(local_path: str) -> str:
+    """public/ 안의 로컬 파일 경로를 배포 사이트 URL로 바꿉니다."""
+    rel_path = public_asset_relative_path(local_path)
+    if not rel_path:
+        return ""
+    return f"{SITE_URL.rstrip('/')}/{quote(rel_path, safe='/-_.~')}"
+
+
+def local_path_from_image_src(src: str) -> str:
+    """이미지 src가 로컬 public 파일이면 파일 경로를 돌려줍니다."""
+    if not isinstance(src, str):
+        return ""
+    src = src.strip()
+    if not src or src.startswith(("https://", "http://", "data:", "cid:")):
+        return ""
+
+    if src.startswith("file:///"):
+        return src[len("file:///") :].replace("/", os.sep)
+    elif src.startswith("file://"):
+        return src[len("file://") :].replace("/", os.sep)
+    elif src.startswith(("/public/", "\\public\\")):
+        return os.path.join(os.path.dirname(__file__), src.lstrip("/\\"))
+    elif src.startswith(("public/", "public\\")):
+        return os.path.join(os.path.dirname(__file__), src)
+    elif os.path.isabs(src):
+        return src
+
+    return ""
+
+
+def optimize_section_image_src(src: str, issue_number: int, section_index: int) -> str:
+    """섹션 이미지를 웹/메일용 JPEG로 압축하고 공개 URL을 반환합니다."""
+    local_path = local_path_from_image_src(src)
+    if not local_path:
+        return normalize_image_src(src)
+
+    if not public_asset_relative_path(local_path) or not os.path.exists(local_path):
+        return normalize_image_src(src)
+
+    images_dir = os.path.join(os.path.dirname(__file__), "public", "issues", "images")
+    os.makedirs(images_dir, exist_ok=True)
+    output_path = os.path.join(images_dir, f"{issue_number:03d}-{section_index:02d}.jpg")
+
+    with Image.open(local_path) as img:
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "L"):
+            background = Image.new("RGB", img.size, "white")
+            if img.mode in ("RGBA", "LA"):
+                background.paste(img, mask=img.getchannel("A"))
+            else:
+                background.paste(img.convert("RGB"))
+            img = background
+        else:
+            img = img.convert("RGB")
+
+        if img.width > SECTION_IMAGE_MAX_WIDTH:
+            new_height = round(img.height * SECTION_IMAGE_MAX_WIDTH / img.width)
+            img = img.resize((SECTION_IMAGE_MAX_WIDTH, new_height), Image.Resampling.LANCZOS)
+
+        img.save(
+            output_path,
+            "JPEG",
+            quality=SECTION_IMAGE_JPEG_QUALITY,
+            optimize=True,
+            progressive=True,
+        )
+
+    return public_asset_url(output_path)
+
+
+def normalize_image_src(src: str) -> str:
+    """이메일/웹에서 접근 가능한 이미지 URL로 정규화합니다."""
+    if not isinstance(src, str):
+        return ""
+    src = src.strip()
+    if not src:
+        return ""
+    if src.startswith(("https://", "http://", "data:", "cid:")):
+        return src
+
+    local_path = local_path_from_image_src(src)
+
+    if local_path:
+        url = public_asset_url(local_path)
+        if url:
+            return url
+
+    return src
 
 
 def clean_comment(comment: str) -> str:
@@ -65,6 +173,56 @@ def clean_comment(comment: str) -> str:
     for pattern in prefixes:
         cleaned = re.sub(rf"^([\W_]*\s*)?{pattern}", r"\1", cleaned)
     return cleaned.strip()
+
+
+def build_section_image_data_uri(section: dict, index: int) -> str:
+    """섹션별 라이트 에디토리얼 스타일 SVG 이미지를 만듭니다."""
+    palettes = [
+        ("#ecfbff", "#d6eef7", "#1570ef", "#0f766e", "#d9b85c"),
+        ("#f3fbff", "#dbe8ff", "#2563eb", "#0f766e", "#e4c46a"),
+        ("#f6fbf8", "#d9f1e5", "#0f766e", "#1570ef", "#d9b85c"),
+        ("#fffaf0", "#f4e6bf", "#c4861a", "#1570ef", "#0f766e"),
+    ]
+    bg, border, accent, accent_2, gold = palettes[index % len(palettes)]
+    category = html_escape(section.get("category", "AI News"))
+    title = section.get("title", "")
+    title_lines = textwrap.wrap(title, width=18)[:3]
+    emoji = html_escape(section.get("emoji", "📰"))
+
+    title_svg = ""
+    y = 185
+    for line in title_lines:
+        title_svg += f'<text x="56" y="{y}" font-size="36" font-weight="700" fill="#172033">{html_escape(line)}</text>'
+        y += 52
+
+    svg = f"""
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" rx="36" fill="{bg}"/>
+  <rect x="22" y="22" width="1156" height="676" rx="30" fill="#ffffff" stroke="{border}" stroke-width="2"/>
+  <rect x="56" y="56" width="210" height="44" rx="22" fill="#ffffff" stroke="{border}" stroke-width="2"/>
+  <text x="84" y="84" font-size="22" font-weight="700" fill="{accent}" letter-spacing="1.5">{category.upper()}</text>
+  <circle cx="1030" cy="126" r="72" fill="#ffffff" stroke="{border}" stroke-width="2"/>
+  <text x="990" y="145" font-size="64">{emoji}</text>
+  <circle cx="930" cy="560" r="120" fill="{gold}" fill-opacity="0.18"/>
+  <circle cx="1080" cy="540" r="88" fill="{accent}" fill-opacity="0.10"/>
+  <path d="M820 190 C900 120 1010 110 1100 170" stroke="{accent}" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M790 250 C885 205 1000 215 1095 275" stroke="{accent_2}" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <rect x="56" y="126" width="112" height="6" rx="3" fill="{gold}"/>
+  {title_svg}
+  <rect x="56" y="538" width="360" height="96" rx="24" fill="#ffffff" stroke="{border}" stroke-width="2"/>
+  <text x="84" y="582" font-size="24" font-weight="700" fill="{accent_2}">SECTION {index + 1:02d}</text>
+  <text x="84" y="618" font-size="20" fill="#5f7695">Creative AI editorial brief</text>
+</svg>
+"""
+    return f"data:image/svg+xml;utf8,{quote(svg)}"
+
+
+def attach_section_images(data: dict) -> None:
+    """각 섹션에 기본 이미지를 붙입니다."""
+    for index, sec in enumerate(data.get("sections", [])):
+        if sec.get("image_src") or sec.get("image_url") or sec.get("image_data_uri"):
+            continue
+        sec["image_data_uri"] = build_section_image_data_uri(sec, index)
 
 
 def get_issue_number() -> int:
@@ -195,6 +353,7 @@ ComfyUI·워크플로우 / 바이브코딩·AI개발도구 / 인테리어·건�
 
 def build_html_email(data: dict) -> str:
     """HTML 이메일 본문을 생성합니다."""
+    attach_section_images(data)
     issue_number = data["issue_number"]
     date_str = data["date_str"]
     tagline = data.get("tagline", "오늘의 AI 뉴스")
@@ -213,23 +372,23 @@ def build_html_email(data: dict) -> str:
         art_body_para2 = trend_article.get("body_para2", "")
         art_impact = trend_article.get("impact", "")
         trend_html = f"""
-  <!-- 트렌드 아티클 -->
-  <tr><td style="background:#fff; padding:32px 40px 0;">
-    <div style="border-left:4px solid #6366f1; padding-left:16px; margin-bottom:8px;">
-      <span style="font-size:11px; color:#6366f1; font-weight:800; letter-spacing:2px; text-transform:uppercase;">이번 호 트렌드 분석</span>
-    </div>
-    <h2 style="margin:0 0 6px; font-size:22px; font-weight:800; color:#1a1a2e; line-height:1.35;">{art_title}</h2>
-    <p style="margin:0 0 24px; font-size:14px; color:#8b5cf6; font-weight:600;">{art_subtitle}</p>
-    <p style="margin:0 0 18px; color:#222; font-size:16px; line-height:1.9; font-weight:500;">{art_intro}</p>
-    <p style="margin:0 0 18px; color:#444; font-size:15px; line-height:1.9;">{art_body}</p>
-    {'<p style="margin:0 0 24px; color:#444; font-size:15px; line-height:1.9;">' + art_body_para2 + '</p>' if art_body_para2 else ''}
-    <div style="background:#f0f7ff; border-radius:10px; padding:18px 22px; border-left:3px solid #6366f1;">
-      <span style="font-size:12px; color:#6366f1; font-weight:700;">💡 실무 시사점</span>
-      <p style="margin:10px 0 0; color:#333; font-size:15px; line-height:1.8;">{art_impact}</p>
+  <tr><td style="background:#ffffff; padding:0 28px 0;">
+    <div style="background:#ffffff; border:1px solid #dfe9f2; border-radius:28px; padding:32px 28px; box-shadow:0 18px 40px rgba(16, 40, 72, 0.06);">
+      <div style="display:inline-block; font-size:11px; color:#0f766e; font-weight:800; letter-spacing:1.6px; text-transform:uppercase; padding:8px 12px; background:#ebfffb; border:1px solid #c9f3ed; border-radius:999px; margin-bottom:16px;">이번 호 트렌드 분석</div>
+      <h2 style="margin:0 0 10px; font-size:30px; font-weight:800; color:#172033; line-height:1.28;">{art_title}</h2>
+      <p style="margin:0 0 24px; font-size:16px; color:#5f7695; line-height:1.7;">{art_subtitle}</p>
+      <div style="height:1px; background:#e7eef5; margin:0 0 24px;"></div>
+      <p style="margin:0 0 18px; color:#172033; font-size:17px; line-height:1.95; font-weight:500;">{art_intro}</p>
+      <p style="margin:0 0 18px; color:#43536b; font-size:15px; line-height:1.95;">{art_body}</p>
+      {'<p style="margin:0 0 24px; color:#43536b; font-size:15px; line-height:1.95;">' + art_body_para2 + '</p>' if art_body_para2 else ''}
+      <div style="background:#f3fbff; border:1px solid #d7edf8; border-radius:22px; padding:20px 22px;">
+        <div style="font-size:12px; color:#1570ef; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; margin-bottom:8px;">Practical Take</div>
+        <p style="margin:0; color:#1e2b3f; font-size:15px; line-height:1.85;">{art_impact}</p>
+      </div>
     </div>
   </td></tr>
-  <tr><td style="background:#fff; padding:16px 40px 0;">
-    <hr style="border:none; border-top:2px solid #f0f0f0;">
+  <tr><td style="background:#f7f9fc; padding:18px 28px 0;">
+    <div style="height:1px; background:#e3ebf3;"></div>
   </td></tr>
 """
 
@@ -240,33 +399,58 @@ def build_html_email(data: dict) -> str:
         title = sec.get("title", "")
         body = sec.get("body", "")
         comment = clean_comment(sec.get("comment", ""))
+        image_src = sec.get("image_src") or sec.get("image_url") or sec.get("image_data_uri", "")
+        image_src = optimize_section_image_src(image_src, issue_number, i)
 
         sections_html += f"""
-        <div style="margin-bottom:32px; padding:24px; background:#fff; border-radius:12px; border-left:4px solid #6366f1;">
-            <div style="font-size:12px; color:#6366f1; font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">
-                {emoji} {category}
-            </div>
-            <h3 style="margin:0 0 12px; font-size:17px; color:#1a1a2e; line-height:1.4;">
+        <div style="margin-bottom:26px; padding:28px; background:#ffffff; border:1px solid #dfe9f2; border-radius:28px; box-shadow:0 14px 32px rgba(20, 33, 61, 0.05);">
+            {'<div style="margin:0 0 22px;"><img src="' + image_src + '" alt="' + html_escape(title) + '" style="display:block; width:100%; height:auto; border-radius:24px; border:1px solid #dfe9f2;"></div>' if image_src else ''}
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+              <tr>
+                <td style="vertical-align:top;">
+                  <div style="font-size:11px; color:#1570ef; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; margin-bottom:10px;">
+                    {category}
+                  </div>
+                </td>
+                <td align="right" style="vertical-align:top;">
+                  <div style="display:inline-block; min-width:42px; height:42px; line-height:42px; text-align:center; border-radius:50%; background:#eef9ff; border:1px solid #d6eef7; font-size:20px;">
+                    {emoji}
+                  </div>
+                </td>
+              </tr>
+            </table>
+            <h3 style="margin:8px 0 14px; font-size:28px; color:#172033; line-height:1.34; letter-spacing:-0.02em;">
                 {title}
             </h3>
-            <p style="margin:0 0 16px; color:#444; line-height:1.85; font-size:15px;">
+            <p style="margin:0 0 18px; color:#5f7695; line-height:1.9; font-size:15px;">
                 {body}
             </p>
-            <div style="background:#f8f7ff; border-radius:8px; padding:12px 16px; border-left:3px solid #a78bfa;">
-                <span style="font-size:13px; color:#6366f1; font-weight:600;">☞ {COMMENT_AUTHOR_NAME}의 한마디:</span>
-                <span style="font-size:14px; color:#555; margin-left:6px;">{comment}</span>
+            <div style="background:#f4f7fb; border:1px solid #e4ebf2; border-radius:22px; padding:18px 20px;">
+                <div style="font-size:12px; color:#0f766e; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; margin-bottom:8px;">{COMMENT_AUTHOR_NAME} Note</div>
+                <div style="font-size:15px; color:#243247; line-height:1.8;">{comment}</div>
             </div>
         </div>
-        <hr style="border:none; border-top:1px solid #f0f0f0; margin:0 0 32px;">
 """
 
     highlights_html = ""
     for h in highlights:
-        highlights_html += f'<li style="margin-bottom:10px; color:#e8e8e8; font-size:15px; line-height:1.6;">{h}</li>'
+        highlights_html += f"""
+        <tr>
+          <td style="padding:0 0 14px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+              <tr>
+                <td style="width:28px; vertical-align:top; padding-top:2px;">
+                  <div style="width:18px; height:18px; border-radius:50%; background:#d9b85c;"></div>
+                </td>
+                <td style="color:#243247; font-size:15px; line-height:1.75;">{h}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>"""
 
     og_title = f"{NEWSLETTER_NAME} #{issue_number:03d} — {tagline}"
     og_description = summary.replace("\"", "&quot;")
-    og_image = f"{SITE_URL}/og-image.png"
+    og_image = f"{SITE_URL}/issues/og/{issue_number:03d}.png"
     web_url = f"{SITE_URL}/issues/{issue_number:03d}.html"
 
     html = f"""<!DOCTYPE html>
@@ -280,77 +464,108 @@ def build_html_email(data: dict) -> str:
 <meta property="og:title" content="{og_title}">
 <meta property="og:description" content="{og_description}">
 <meta property="og:image" content="{og_image}">
-<meta property="og:url" content="{SITE_URL}">
+<meta property="og:url" content="{web_url}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{og_title}">
 <meta name="twitter:description" content="{og_description}">
 <meta name="twitter:image" content="{og_image}">
 </head>
-<body style="margin:0; padding:0; background:#f5f5f7; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7;">
-<tr><td align="center" style="padding:32px 16px;">
-<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px; width:100%;">
+<body style="margin:0; padding:0; background:#f7f9fc; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:#172033;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f9fc;">
+<tr><td align="center" style="padding:36px 16px 48px;">
+<table width="760" cellpadding="0" cellspacing="0" style="max-width:760px; width:100%;">
 
   <!-- 웹에서 보기 -->
-  <tr><td style="padding:0 0 12px; text-align:center;">
-    <p style="margin:0; font-size:12px; color:#999;">
+  <tr><td style="padding:0 12px 16px; text-align:center;">
+    <p style="margin:0; font-size:12px; color:#8da0b8;">
       이메일이 제대로 보이지 않나요?
-      <a href="{web_url}" style="color:#6366f1; text-decoration:underline;">웹에서 보기</a>
+      <a href="{web_url}" style="color:#1570ef; text-decoration:underline;">웹에서 보기</a>
     </p>
   </td></tr>
 
   <!-- 헤더 -->
-  <tr><td style="background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%); border-radius:16px 16px 0 0; padding:36px 40px;">
-    <div style="font-size:12px; color:rgba(255,255,255,0.7); font-weight:600; letter-spacing:2px; margin-bottom:8px;">
-      {NEWSLETTER_NAME} _ {date_str}
-    </div>
-    <div style="font-size:26px; font-weight:800; color:#fff; line-height:1.3;">
-      "{tagline}"
+  <tr><td style="padding:0 12px 18px;">
+    <div style="background:#ffffff; border:1px solid #dfe9f2; border-radius:34px; padding:34px 34px 30px; box-shadow:0 22px 50px rgba(16, 40, 72, 0.07);">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr>
+          <td style="vertical-align:top;">
+            <div style="display:inline-block; padding:9px 14px; border-radius:999px; background:#eef9ff; border:1px solid #d6eef7; font-size:11px; color:#1570ef; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:18px;">
+              Issue #{issue_number:03d}
+            </div>
+            <div style="font-size:13px; color:#667a95; font-weight:700; letter-spacing:1.5px; margin-bottom:14px;">
+              {NEWSLETTER_NAME} · {date_str}
+            </div>
+            <div style="font-size:38px; font-weight:800; color:#172033; line-height:1.18; letter-spacing:-0.03em; margin-bottom:14px;">
+              {tagline}
+            </div>
+            <div style="font-size:16px; color:#5f7695; line-height:1.75; max-width:560px;">
+              모델 발표 그 자체보다, AI가 실제 산업과 일상 속으로 어떻게 스며드는지를 읽는 뉴스레터.
+            </div>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-top:28px; background:linear-gradient(135deg,#ecfbff 0%,#f9fbff 58%,#fff8e9 100%); border:1px solid #dfeef7; border-radius:28px; padding:20px 22px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+          <tr>
+            <td style="width:34%; vertical-align:top; padding-right:12px;">
+              <div style="font-size:11px; color:#0f766e; font-weight:800; letter-spacing:1.3px; text-transform:uppercase; margin-bottom:8px;">Signal</div>
+              <div style="font-size:18px; color:#172033; font-weight:700; line-height:1.45;">AI가 제품, 보안, 광고, 공급망으로 확장되는 흐름</div>
+            </td>
+            <td style="width:33%; vertical-align:top; padding:0 12px;">
+              <div style="font-size:11px; color:#1570ef; font-weight:800; letter-spacing:1.3px; text-transform:uppercase; margin-bottom:8px;">Palette</div>
+              <div style="font-size:15px; color:#4a5d77; line-height:1.65;">밝은 매거진형 레이아웃 위에 청록과 골드로 브랜드 포인트를 얹었습니다.</div>
+            </td>
+            <td style="width:33%; vertical-align:top; padding-left:12px;">
+              <div style="font-size:11px; color:#c4861a; font-weight:800; letter-spacing:1.3px; text-transform:uppercase; margin-bottom:8px;">Format</div>
+              <div style="font-size:15px; color:#4a5d77; line-height:1.65;">카카오 공유용 썸네일과 웹 아카이브에 모두 맞는 카드형 편집 구조입니다.</div>
+            </td>
+          </tr>
+        </table>
+      </div>
     </div>
   </td></tr>
 
   <!-- 편집장 노트 -->
-  <tr><td style="background:#fff; padding:24px 40px 0;">
-    <div style="background:#f0f0ff; border-radius:10px; padding:16px 20px;">
-      <span style="font-size:13px; color:#6366f1; font-weight:700;">💬 편집장 노트</span>
-      <p style="margin:8px 0 0; color:#333; font-size:15px; line-height:1.75;">{summary}</p>
+  <tr><td style="padding:0 12px 18px;">
+    <div style="background:#ffffff; border:1px solid #dfe9f2; border-radius:28px; padding:24px 26px; box-shadow:0 16px 38px rgba(16, 40, 72, 0.05);">
+      <div style="font-size:11px; color:#1570ef; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px;">Editor's Note</div>
+      <p style="margin:0; color:#243247; font-size:16px; line-height:1.9;">{summary}</p>
     </div>
   </td></tr>
 
   {trend_html}
 
   <!-- 뉴스 섹션 헤더 -->
-  <tr><td style="background:#fff; padding:24px 40px 8px;">
-    <div style="font-size:11px; color:#999; font-weight:700; letter-spacing:2px; text-transform:uppercase;">이번 주 주요 뉴스</div>
+  <tr><td style="padding:10px 28px 12px;">
+    <div style="font-size:12px; color:#6f83a0; font-weight:800; letter-spacing:1.7px; text-transform:uppercase;">This Week's Key Stories</div>
   </td></tr>
 
   <!-- 섹션들 -->
-  <tr><td style="background:#f8f8fc; padding:24px 40px;">
+  <tr><td style="padding:0 28px;">
     {sections_html}
   </td></tr>
 
   <!-- 핵심 인사이트 -->
-  <tr><td style="background:#fff; padding:32px 40px;">
-    <div style="background:#1a1a2e; border-radius:12px; padding:24px 28px;">
-      <div style="font-size:14px; color:#a78bfa; font-weight:700; margin-bottom:16px;">
-        이번 호 핵심 인사이트 ✅
-      </div>
-      <ul style="margin:0; padding-left:20px; color:#ccc;">
+  <tr><td style="padding:8px 28px 0;">
+    <div style="background:linear-gradient(135deg,#ffffff 0%,#f7fbff 62%,#fffaf0 100%); border:1px solid #dfe9f2; border-radius:28px; padding:28px; box-shadow:0 16px 36px rgba(16, 40, 72, 0.05);">
+      <div style="font-size:12px; color:#c4861a; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:14px;">Key Insights</div>
+      <div style="font-size:28px; color:#172033; font-weight:800; line-height:1.3; margin-bottom:16px;">이번 호에서 꼭 읽어야 할 세 가지</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
         {highlights_html}
-      </ul>
+      </table>
     </div>
   </td></tr>
 
   <!-- 푸터 -->
-  <tr><td style="background:#f5f5f7; border-radius:0 0 16px 16px; padding:28px 40px; text-align:center;">
-    <p style="margin:0 0 10px; font-size:13px; color:#555;">
-      🌐 <a href="https://cri-ai-tive.com" style="color:#6366f1; text-decoration:none;">cri-ai-tive.com</a>
+  <tr><td style="padding:24px 28px 0; text-align:center;">
+    <p style="margin:0 0 10px; font-size:13px; color:#5f7695;">
+      🌐 <a href="https://cri-ai-tive.com" style="color:#1570ef; text-decoration:none;">cri-ai-tive.com</a>
       &nbsp;&nbsp;·&nbsp;&nbsp;
-      <a href="https://aitive.me" style="color:#6366f1; text-decoration:none;">aitive.me</a>
+      <a href="https://aitive.me" style="color:#1570ef; text-decoration:none;">aitive.me</a>
       &nbsp;&nbsp;&nbsp;
-      📺 <a href="https://youtube.com/@cri-ai-tive" style="color:#6366f1; text-decoration:none;">youtube.com/@cri-ai-tive</a>
+      📺 <a href="https://youtube.com/@cri-ai-tive" style="color:#1570ef; text-decoration:none;">youtube.com/@cri-ai-tive</a>
     </p>
-    <p style="margin:0; font-size:11px; color:#aaa;">
+    <p style="margin:0; font-size:11px; color:#94a3b8;">
       {NEWSLETTER_NAME} · 매주 화요일·금요일 오전 5시 50분 발송 · 구독 취소를 원하시면 회신해주세요.
     </p>
   </td></tr>
@@ -470,43 +685,53 @@ def generate_og_image(data: dict, public_dir: str) -> None:
     """OG 썸네일 이미지를 생성합니다."""
     tagline = data.get("tagline", NEWSLETTER_NAME)
     issue_number = data["issue_number"]
+    issues_og_dir = os.path.join(public_dir, "issues", "og")
+    os.makedirs(issues_og_dir, exist_ok=True)
 
-    img = Image.new("RGB", (1200, 630), color="#1a1a2e")
+    img = Image.new("RGB", (1200, 630), color="#f7f9fc")
     draw = ImageDraw.Draw(img)
 
-    # 왼쪽 보라색 강조선
-    draw.rectangle([0, 0, 8, 630], fill="#6366f1")
+    # Outer frame
+    draw.rounded_rectangle([24, 24, 1176, 606], radius=34, fill="#ffffff", outline="#dfe9f2", width=2)
 
-    # 상단 배지
-    draw.rounded_rectangle([60, 55, 60 + len(NEWSLETTER_NAME) * 13 + 40, 105], radius=20, fill="#6366f1")
-    draw.text((80, 68), NEWSLETTER_NAME, fill="white")
+    # Accent ribbon
+    draw.rounded_rectangle([72, 64, 220, 112], radius=24, fill="#eef9ff", outline="#d6eef7", width=2)
+    draw.text((96, 80), f"ISSUE #{issue_number:03d}", fill="#1570ef")
 
-    # 이슈 번호
-    draw.text((60, 130), f"#{issue_number:03d}", fill="#a78bfa")
+    # Brand line
+    draw.text((72, 140), NEWSLETTER_NAME, fill="#5f7695")
 
-    # 태그라인 (긴 텍스트 줄바꿈)
-    words = tagline
-    draw.text((60, 200), words[:28], fill="#ffffff")
-    if len(words) > 28:
-        draw.text((60, 255), words[28:56], fill="#ffffff")
+    # Main title
+    title_line_1 = tagline[:20]
+    title_line_2 = tagline[20:40]
+    title_line_3 = tagline[40:58]
+    draw.text((72, 205), title_line_1, fill="#172033")
+    if title_line_2:
+        draw.text((72, 265), title_line_2, fill="#172033")
+    if title_line_3:
+        draw.text((72, 325), title_line_3, fill="#172033")
 
-    # 구분선
-    draw.rectangle([60, 360, 1140, 362], fill="#2d2d4e")
+    # Soft editorial panel
+    draw.rounded_rectangle([72, 420, 1128, 542], radius=28, fill="#f4f8fc", outline="#e4ebf2", width=2)
+    draw.text((100, 455), "AI competition is shifting from model launches", fill="#0f766e")
+    draw.text((100, 492), "to product integration, security, and infrastructure.", fill="#4a5d77")
 
-    # 하단 카테고리 태그
-    tags = ["언어모델", "ComfyUI", "바이브코딩", "인테리어AI", "영상AI"]
-    x = 60
-    for tag in tags:
-        w = len(tag) * 14 + 30
-        draw.rounded_rectangle([x, 400, x + w, 440], radius=12, fill="#2d2d4e")
-        draw.text((x + 15, 410), tag, fill="#a78bfa")
-        x += w + 15
+    # Gold signal mark
+    draw.ellipse([1010, 78, 1088, 156], fill="#fff7df", outline="#e6cf85", width=3)
+    draw.text((1033, 101), "AI", fill="#c4861a")
 
-    # URL
-    draw.text((60, 560), SITE_URL.replace("https://", ""), fill="#6366f1")
+    # Decorative lines
+    draw.line([920, 104, 1000, 104], fill="#8fdbe5", width=3)
+    draw.line([920, 128, 980, 128], fill="#cfeef3", width=3)
 
-    img.save(os.path.join(public_dir, "og-image.png"))
-    print("🖼️  OG 이미지 생성 완료: public/og-image.png")
+    # Footer URL
+    draw.text((72, 570), SITE_URL.replace("https://", ""), fill="#94a3b8")
+
+    latest_og_path = os.path.join(public_dir, "og-image.png")
+    issue_og_path = os.path.join(issues_og_dir, f"{issue_number:03d}.png")
+    img.save(latest_og_path)
+    img.save(issue_og_path)
+    print(f"🖼️  OG 이미지 생성 완료: public/og-image.png, public/issues/og/{issue_number:03d}.png")
 
 
 def save_html_files(data: dict, html: str) -> None:
