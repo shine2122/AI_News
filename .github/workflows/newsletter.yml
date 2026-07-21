@@ -1,56 +1,18 @@
-name: AI 뉴스레터 발송
+name: AI 뉴스레터 로컬 전환 안내
 
 on:
-  schedule:
-    - cron: '50 20 * * 1'  # 매주 화요일 05:50 KST (월요일 20:50 UTC)
-    - cron: '50 20 * * 4'  # 매주 금요일 05:50 KST (목요일 20:50 UTC)
-  workflow_dispatch:        # 수동 실행 (테스트용)
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  send-newsletter:
+  local-only-notice:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
 
     steps:
-      - name: 코드 체크아웃
-        uses: actions/checkout@v4
-
-      - name: Python 설치
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 의존성 설치
-        run: pip install -r requirements.txt
-
-      - name: 뉴스레터 발송
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
-          NEWSLETTER_NAME: ${{ secrets.NEWSLETTER_NAME }}
-          AUTHOR_NAME: ${{ secrets.AUTHOR_NAME }}
-          SITE_URL: https://ai-news-ivxh.vercel.app
-        run: python newsletter.py
-
-      - name: 변경사항 커밋 & 푸시
+      - name: 로컬 발송 전환 안내
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/ .issue_counter
-          git diff --staged --quiet || git commit -m "newsletter: $(date +'%Y-%m-%d') 뉴스레터 발행"
-          git push
-
-      - name: GitHub Pages 배포
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
-          keep_files: true
+          echo "GitHub Actions 자동 발송은 비활성화되었습니다."
+          echo "이제 뉴스레터는 로컬에서 python newsletter.py 로 생성/검토/발송하세요."
+          echo "미리보기만 필요하면 python newsletter.py --dry-run 을 사용하세요."
